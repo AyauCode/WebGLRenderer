@@ -1,0 +1,260 @@
+
+
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<title> WebGL Rendering Tests </title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+<style>
+    #fpsCounter {
+        font-size: 12px;
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1;
+        color:black;
+    }
+    .container {display: flex; flex-direction: row; flex-shrink: 0;flex-wrap: nowrap;}
+    input[type=color] {margin:0; padding:0;border:0;}
+    fieldset {flex-shrink: 0;}
+    legend {flex-shrink: 0;}
+    input[type=checkbox]{flex-shrink: 0;}
+    input[type=range]{flex-shrink: 0;}
+</style>
+
+<!--  ************** Fragment Shader ************* --> 
+<script id="shader-fs" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision mediump float;
+
+    uniform vec3 uColor;
+    uniform float uAmbient;
+    uniform float uFlatShadingStrength;
+
+    varying vec3 lightPos;
+    varying vec3 vVertex;
+
+    void main(void) {
+        vec3 dpdx = dFdx(vVertex);
+        vec3 dpdy = dFdy(vVertex);
+
+        vec3 lightDir = lightPos - vVertex;
+        lightDir = normalize(lightDir);
+        
+        vec3 vNormal = normalize(cross(dpdy, dpdx));
+
+        float angle = clamp(dot(vNormal, lightDir), 0.0, 1.0);
+
+        gl_FragColor = vec4((angle*uFlatShadingStrength+uAmbient)*uColor,1.0);
+    }
+</script>
+
+<!--  ************** Vertex Shader ************* -->
+<script id="shader-vs" type="x-shader/x-vertex">
+
+    attribute vec3 aVertexPosition;
+    uniform vec3 uColor;
+    uniform float uAmbient;
+    uniform float uFlatShadingStrength;
+
+    varying vec3 vVertex;
+    varying vec3 lightPos;
+
+    uniform mat4 uLightMatrix;
+    uniform mat4 uMMatrix;
+    uniform mat4 uVMatrix;
+    uniform mat4 uPMatrix;
+
+    void main(void) {
+        vec4 vertexPos = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
+        gl_Position = vertexPos;
+
+        vVertex = vec3(vertexPos);
+        lightPos = vec3(uPMatrix*uVMatrix*uLightMatrix*vec4(0.0, 0.0, 0.0, 1.0));
+    }
+</script>
+<!--  ************** WATER Shaders ************* --> 
+
+<!--  ************** WATER Fragment Shader ************* --> 
+<script id="water-shader-fs" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision mediump float;
+
+    uniform vec3 uColor;
+    uniform float uAmbient;
+    uniform float uFlatShadingStrength;
+    
+    varying vec3 lightPos;
+    varying vec3 vVertex;
+    
+    void main(void) {
+        vec3 dpdx = dFdx(vVertex);
+        vec3 dpdy = dFdy(vVertex);
+
+        vec3 lightDir = lightPos - vVertex;
+        lightDir = normalize(lightDir);
+        
+        vec3 vNormal = normalize(cross(dpdy, dpdx));
+
+        float angle = clamp(dot(vNormal, lightDir), 0.0, 1.0);
+
+        gl_FragColor = vec4((angle*uFlatShadingStrength+uAmbient)*uColor,0.5);
+    }
+</script>
+    
+<!--  ************** Vertex Shader ************* -->
+<script id="water-shader-vs" type="x-shader/x-vertex">
+
+    attribute vec3 aVertexPosition;
+    uniform vec3 uColor;
+    uniform float uAmbient;
+    uniform float uFlatShadingStrength;
+    
+    uniform float uTime;
+
+    varying vec3 vVertex;
+    varying vec3 lightPos;
+
+    uniform mat4 uLightMatrix;
+    uniform mat4 uMMatrix;
+    uniform mat4 uVMatrix;
+    uniform mat4 uPMatrix;
+
+    void main(void) {
+        vec4 vertexPos = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
+        gl_Position = vertexPos + vec4(0.0,cos(aVertexPosition.x + uTime)*sin(aVertexPosition.z + uTime),0.0,0.0);
+
+        vVertex = vec3(gl_Position);
+        lightPos = vec3(uPMatrix*uVMatrix*uLightMatrix*vec4(0.0, 0.0, 0.0, 1.0));
+    }
+</script>
+
+<script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="shaders_setup.js"></script>
+<script type="text/javascript" src="perlin.js"></script>
+<script type="text/javascript" src="customMath.js"></script>
+<script type="text/javascript" src="entities.js"></script>
+<script type="text/javascript" src="main.js"></script>
+
+</head>
+
+
+<body onload="webGLStart(); initUI();">
+    <div class="container">
+        <canvas id="code03-canvas"style="border:none;"width="700"height="700"></canvas>
+        <div id = "fpsCounter">FPS: 0</div>
+        <fieldset>
+            <legend>Program Options:</legend>
+            <div>
+                <input type="checkbox" id="flatShading" name="flatShading" checked>
+                <label for="flatShading">Flat Shading</label>
+            </div>
+
+            <div>
+                <input type="checkbox" id="ambientLighting" name="ambientLighting" checked>
+                <label for="ambientLighting">Ambient Lighting</label>
+            </div>
+            <div class="slidecontainer">
+                <output id="ambientLightStrengthText">&emsp;Strength: 0.25</output>
+                <input type="range" class="slider" id="ambientLightStrengthSlider" step="0.01" min="0" max="1" value="0.25">
+            </div>
+
+            <div>
+                <input type="checkbox" id="freeCam" name="freeCam">
+                <label for="freeCam">Free Cam</label>
+            </div>
+
+            <div>
+                <input type="checkbox" id="followObject" name="followObject">
+                <label for="followObject">Follow Object</label>
+            </div>
+
+            <div>
+                <input type="checkbox" id="drawGroundPlane" name="drawGroundPlane" checked>
+                <label for="drawGroundPlane">Draw Ground Plane</label>
+            </div>
+            <div class="colorcontainer">
+                <output id="groundPlaneColorText"><b>&emsp;&emsp;Color: </b></output>
+                <input type="color" id="groundPlaneColor" name="groundPlaneColor" value="#e66465">
+            </div>
+
+            <div>
+                <input type="checkbox" id="drawTerrain" name="drawTerrain">
+                <label for="drawTerrain">Draw Terrain</label>
+            </div>
+            <div class="colorcontainer">
+                <output id="terrainColorText"><b>&emsp;&emsp;Color: </b></output>
+                <input type="color" id="terrainColor" name="terrainColor" value="#e66465">
+            </div>
+
+            <div>
+                <input type="checkbox" id="drawWater" name="drawWater">
+                <label for="drawWater">Draw Water</label>
+            </div>
+            <div class="colorcontainer">
+                <output id="waterColorText"><b>&emsp;&emsp;Color: </b></output>
+                <input type="color" id="waterColor" name="waterColor" value="#e66465">
+            </div>
+        </fieldset>
+    </div>
+</body>
+
+</html>
+
+<!-- Script for keeping UI labels updated -->
+<script type="text/javascript">
+    function initUI(){
+        document.getElementById("groundPlaneColor").value = getGroundPlaneColorAsHex();
+        document.getElementById("terrainColor").value = getTerrainColorAsHex();
+        document.getElementById("waterColor").value = getWaterColorAsHex();
+
+
+        document.getElementById("flatShading").oninput = function() {
+            setFlatShadingActive(document.getElementById("flatShading").checked);
+        };
+        document.getElementById("ambientLighting").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("ambientLightStrengthSlider").value).toFixed(2);
+            setAmbientLightActive(document.getElementById("ambientLighting").checked, roundedVal);
+        };
+        document.getElementById("ambientLightStrengthSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("ambientLightStrengthSlider").value).toFixed(2);
+            document.getElementById("ambientLightStrengthText").innerHTML = "&emsp;Strength: " + roundedVal;
+            setAmbientLightStrength(roundedVal);
+        };
+        document.getElementById("freeCam").oninput = function() {
+            document.getElementById("followObject").checked = false;
+            setFollowObjectActive(document.getElementById("followObject").checked);
+
+            setFreeCamActive(document.getElementById("freeCam").checked);
+        };
+        document.getElementById("followObject").oninput = function() {
+            document.getElementById("freeCam").checked = false;
+            setFreeCamActive(document.getElementById("freeCam").checked);
+
+            setFollowObjectActive(document.getElementById("followObject").checked);
+        };
+
+        document.getElementById("drawGroundPlane").oninput = function() {
+            setShouldDrawGroundPlane(document.getElementById("drawGroundPlane").checked);
+        };
+        document.getElementById("groundPlaneColor").oninput = function() {
+            setGroundPlaneColor(document.getElementById("groundPlaneColor").value);
+        };
+
+        document.getElementById("drawTerrain").oninput = function() {
+            setShouldDrawTerrain(document.getElementById("drawTerrain").checked);
+        };
+        document.getElementById("terrainColor").oninput = function() {
+            setTerrainColor(document.getElementById("terrainColor").value);
+        };
+
+        document.getElementById("drawWater").oninput = function() {
+            setShouldDrawWater(document.getElementById("drawWater").checked);
+        };
+        document.getElementById("waterColor").oninput = function() {
+            setWaterColor(document.getElementById("waterColor").value);
+        };
+    }
+</script>
