@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////
+//FileName: programSettings.js
+//Author: Ayau(AyauCode)
+//Copyright 2023, Ayau(AyauCode), All rights reserved.
+///////////////////////////////////////////////////////
+
 //Settings controlled by UI
 var drawSolidBackground = false, drawGradientSky = true, drawLight = false, ambientLighting = true, diffuseLighting = true, specularLighting = true, freeCam = false, followObject = false, drawGroundPlane = true, drawTerrain = false, drawWater = false;
 

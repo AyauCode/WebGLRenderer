@@ -1,3 +1,8 @@
+///////////////////////////////////////////////////////
+//FileName: customMath.js
+//Author: Ayau(AyauCode)
+//Copyright 2023, Ayau(AyauCode), All rights reserved.
+///////////////////////////////////////////////////////
 
 const directions = [[0,1,0],[0,-1,0],[-1,0,0],[1,0,0],[0,0,1],[0,0,-1]];
 

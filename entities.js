@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////
+//FileName: entities.js
+//Author: Ayau(AyauCode)
+//Copyright 2023, Ayau(AyauCode), All rights reserved.
+///////////////////////////////////////////////////////
+
 var currentWorldObjectMap;
 var unitCubeMesh, unitCylinderMesh, unitSphereUpFaceMesh, unitPyramidMesh, screenSizeQuadMesh;
 const defaultSphereMeshResolution = 20, defaultCylinderMeshResolution = 20;

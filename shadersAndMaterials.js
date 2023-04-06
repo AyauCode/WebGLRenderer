@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////
+//FileName: shadersAndMaterials.js
+//Author: Ayau(AyauCode)
+//Copyright 2023, Ayau(AyauCode), All rights reserved.
+///////////////////////////////////////////////////////
+
 //The phong shader program for all default world objects
 var phongShaderProgram;
 //The shader program for animated, transparent water

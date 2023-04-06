@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////
+//FileName: main.js
+//Author: Ayau(AyauCode)
+//Copyright 2023, Ayau(AyauCode), All rights reserved.
+///////////////////////////////////////////////////////
+
 //The OpenGL Context
 var gl;
 //The canvas element being drawn to
