@@ -121,8 +121,6 @@ function initScene() {
     //=======================================================
 
     cam.lookAt(camStartPos,heirarchicalObject.getTransform().getLocalPosition(),[0,1,0]);
-
-    console.log(materialObjectMap);
 }
 ///////////////////////////////////////////////////////////////
 function mainProgramLoop(now) {
