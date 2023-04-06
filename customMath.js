@@ -26,6 +26,14 @@ function clamp(val, min, max){
     return Math.min(Math.max(val, min), max);
 }
 /**
+ * Returns an array containing the inverted rgb compoenents of the given color
+ * @param {*} col A length 3 array representing color [r,g,b]
+ * @returns A length 3 array of the given color inverted
+ */
+function invertColor(col){
+    return [1.0 - col[0], 1.0 - col[1], 1.0 - col[2]];
+}
+/**
  * Returns the hexadecimal representation of a given color
  * @param {*} color An array representing an rgb color value ([r,g,b] with r,g,b in range [0,1])
  * @returns A string containing the hexadecimal representation of the given rgb value
@@ -73,12 +81,41 @@ function hexToRGB(hex){
     b = +b/255.0;
     return [r,g,b];
 }
+/**
+ * Returns the normal vector of the triangle given by the provided points
+ * @param {*} v0 The first vertex of a 3D triangle
+ * @param {*} v1 The second vertex of a 3D triangle
+ * @param {*} v2 The thirds vertex of a 3D triangle
+ * @returns A 3D normal vector
+ */
+function calculateSurfaceNormal(v0, v1, v2){
+    var u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+    var v = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+    var nX = u[1] * v[2] - u[2] * v[1];
+    var nY = u[2] * v[0] - u[0] * v[2];
+    var nZ = u[0] * v[1] - u[1] * v[0];
+    return [nX, nY, nZ];
+}
+/**
+ * Returns the height of a simple 3D wave at a given x and y
+ * @param {*} x
+ * @param {*} y 
+ * @returns The height of a 3D wave between [-1,1]
+ */
 function wave2(x,y){
     return Math.sin(y) * Math.cos(x);
 }
+/**
+ * Generates a mesh representing a single "side" of a sphere (The sphere "face" is created by normalizing the vertices of a 3D cube), with given normal.
+ * @param {*} normal The normal of the face to generate
+ * @param {*} resolution The resolution of the mesh
+ * @param {*} radius The radius of the sphere
+ * @returns A mesh representing a single "side" of a sphere generated from a cube.
+ */
 function generateCubeSphereFace(normal, resolution, radius){
     var vertices = [];
     var indices = [];
+    var normals = [];
 
     var axisA = vec3.create();
     vec3.set([normal[1],normal[2],normal[0]], axisA);
@@ -102,6 +139,12 @@ function generateCubeSphereFace(normal, resolution, radius){
             vertices.push(sphereVertex[1]);
             vertices.push(sphereVertex[2]);
 
+            var mag = Math.sqrt(sphereVertex[0] * sphereVertex[0] + sphereVertex[1] * sphereVertex[1] + sphereVertex[2] * sphereVertex[2])
+            sphereNormal = [sphereVertex[0] / mag, sphereVertex[1] / mag, sphereVertex[2] / mag];
+            normals.push(sphereNormal[0]);
+            normals.push(sphereNormal[1]);
+            normals.push(sphereNormal[2]);
+
             if(x != resolution - 1 && y != resolution - 1){
                 indices.push(index);
                 indices.push(index + resolution + 1);
@@ -115,12 +158,19 @@ function generateCubeSphereFace(normal, resolution, radius){
     }
 
     var cubeSphereMesh = new Mesh();
-    cubeSphereMesh.createNewBuffers(vertices, indices);
+    cubeSphereMesh.createNewBuffersWithNormals(vertices, indices, normals);
     return cubeSphereMesh;
 }
+/**
+ * Generate a plane mesh with given size and resolution.
+ * @param {*} size A 2D vector representing the x,z size of the plane
+ * @param {*} resolution The resolution of the mesh
+ * @returns A Mesh representing a plane with given size and resolution
+ */
 function generatePlaneMesh(size, resolution){
     var vertices = [];
     var indices = [];
+    var normals = [];
 
     var xStep = size[0] / parseFloat(resolution);
     var yStep = size[1] / parseFloat(resolution);
@@ -129,6 +179,10 @@ function generatePlaneMesh(size, resolution){
             vertices.push(x*xStep);
             vertices.push(0);
             vertices.push(-y*yStep);
+
+            normals.push(0);
+            normals.push(1);
+            normals.push(0);
         }
     }
 
@@ -146,12 +200,18 @@ function generatePlaneMesh(size, resolution){
     }
 
     var planeMesh = new Mesh();
-    planeMesh.createNewBuffers(vertices, indices);
+    planeMesh.createNewBuffersWithNormals(vertices, indices, normals);
     return planeMesh;
 }
 
 var featureSize = 10.0;
 var noiseStrength = 2.0;
+/**
+ * Generates a plane mesh using Simplex Noise
+ * @param {*} size A 2D vector representing the x,z size of the plane
+ * @param {*} resolution The resolution of the mesh
+ * @returns A mesh representing a plane with each vertex y generated using Simplex Noise
+ */
 function generateNoiseMesh(size, resolution){
     var vertices = [];
     var indices = [];
@@ -181,6 +241,7 @@ function generateNoiseMesh(size, resolution){
 
     var planeMesh = new Mesh();
     planeMesh.createNewBuffers(vertices, indices);
+    planeMesh.calculateNormals(vertices, indices);
     return planeMesh;
 }
 /**
@@ -257,9 +318,11 @@ function generateCylinderMesh(resolution, bottomRadius, topRadius){
 
     var cylinderMesh = new Mesh();
     cylinderMesh.createNewBuffers(vertices, indices);
+    cylinderMesh.calculateNormals(vertices, indices);
     return cylinderMesh;
 }
 
+//This function doesn't really work
 function eulerAnglesFromRotationMat4(rotMat){
     var theta1, v1, phi1, theta2, v2, phi2;
     if(Math.abs(rotMat[8]-1) > 0.0001 && Math.abs(rotMat[8]+1) > 0.0001){

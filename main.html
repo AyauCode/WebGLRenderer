@@ -1,11 +1,9 @@
-
-
 <!DOCTYPE html>
 
 <html>
 
 <head>
-<title> WebGL Rendering Tests </title>
+<title> WebGL Custom Engine </title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 <style>
     #fpsCounter {
@@ -14,55 +12,143 @@
         top: 10px;
         left: 10px;
         z-index: 1;
-        color:black;
     }
-    .container {display: flex; flex-direction: row; flex-shrink: 0;flex-wrap: nowrap;}
-    input[type=color] {margin:0; padding:0;border:0;}
-    fieldset {flex-shrink: 0;}
-    legend {flex-shrink: 0;}
-    input[type=checkbox]{flex-shrink: 0;}
-    input[type=range]{flex-shrink: 0;}
+    .container {
+        display: flex;
+        flex-direction:row;
+        flex-shrink: 0;
+        flex-wrap: nowrap;
+    }
+    /* Style the tab */
+    .tab {
+        overflow: hidden;
+        border: 1px solid #ccc;
+        background-color: #f1f1f1;
+    }
+
+    /* Style the buttons inside the tab */
+    .tab button {
+        background-color: inherit;
+        float: left;
+        border: none;
+        outline: none;
+        cursor: pointer;
+        padding: 6px 8px;
+        transition: 0.3s;
+        font-size: 12px;
+    }
+    /* Change background color of buttons on hover */
+    .tab button:hover {
+        background-color: #ddd;
+    }
+    .tab button.active {
+        background-color: #ccc;
+    }
+    /* Style the tab content */
+    .tabcontent {
+        display: none;
+        padding: 2px 1px;
+        border: 2px solid #ccc;
+        border-top: none;
+    }
+    fieldset {
+        flex-shrink: 0;
+        min-width: 350px;
+    }
+    legend {
+        flex-shrink: 0;
+    }
+    .colorcontainer output{
+        vertical-align: middle;
+        width: 100px;
+        display: inline-flex;
+    }
+    .slidecontainer output{
+        width: 100px;
+        display: inline-block;
+        vertical-align: middle;
+    }
+    label {
+        vertical-align: middle;
+    }
+    input[type=checkbox]{
+        flex-shrink: 0;
+        vertical-align: middle;
+    }
+    input[type=range]{
+        flex-shrink: 0;
+        vertical-align: middle;
+        text-align: center;
+    }
+    input[type=color]{
+        width: 25px;
+        height: 25px;
+        vertical-align: middle;
+        padding: 0;
+        margin: 1px;
+    }
 </style>
 
+<!--  ************** PHONG Shader ************* --> 
 <!--  ************** Fragment Shader ************* --> 
 <script id="shader-fs" type="x-shader/x-fragment">
     #extension GL_OES_standard_derivatives : enable
     precision mediump float;
 
     uniform vec3 uColor;
-    uniform float uAmbient;
-    uniform float uFlatShadingStrength;
+    uniform float uAmbientStrength;
+    uniform float uDiffuseStrength;
+    uniform float uSpecularStrength;
+    uniform float uSpecularFocus;
+    uniform vec3 uLightColor;
 
+    varying vec3 worldVertex;
+    varying vec3 normal;
     varying vec3 lightPos;
-    varying vec3 vVertex;
+    varying vec3 camPos;
 
     void main(void) {
-        vec3 dpdx = dFdx(vVertex);
-        vec3 dpdy = dFdy(vVertex);
-
-        vec3 lightDir = lightPos - vVertex;
-        lightDir = normalize(lightDir);
+        vec3 norm = normalize(normal);
+        vec3 lightDir = normalize(lightPos - worldVertex);
         
-        vec3 vNormal = normalize(cross(dpdy, dpdx));
+        vec3 ambient = uAmbientStrength * uLightColor;
 
-        float angle = clamp(dot(vNormal, lightDir), 0.0, 1.0);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = uDiffuseStrength * diff * uLightColor;
 
-        gl_FragColor = vec4((angle*uFlatShadingStrength+uAmbient)*uColor,1.0);
+        vec3 viewDir = normalize(camPos - worldVertex);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(reflectDir, viewDir), 0.0), pow(2.0,uSpecularFocus));
+        vec3 specular = uSpecularStrength * spec * uLightColor;
+
+        vec3 result = (ambient + diffuse + specular) * uColor;
+        gl_FragColor = vec4(result, 1.0);
     }
 </script>
 
 <!--  ************** Vertex Shader ************* -->
 <script id="shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
 
     attribute vec3 aVertexPosition;
+    attribute vec3 aNormal;
+
     uniform vec3 uColor;
-    uniform float uAmbient;
-    uniform float uFlatShadingStrength;
+    uniform float uAmbientStrength;
+    uniform float uDiffuseStrength;
+    uniform float uSpecularStrength;
+    uniform float uSpecularFocus;
+    uniform vec3 uLightColor;
 
-    varying vec3 vVertex;
+    varying vec3 worldVertex;
+    varying vec3 normal;
     varying vec3 lightPos;
+    varying vec3 camPos;
 
-    uniform mat4 uLightMatrix;
+    uniform mat4 uLightModelMatrix;
+    uniform mat4 uCamModelMatrix;
+
+    uniform mat3 uNormalMatrix;
     uniform mat4 uMMatrix;
     uniform mat4 uVMatrix;
     uniform mat4 uPMatrix;
@@ -71,12 +157,93 @@
         vec4 vertexPos = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
         gl_Position = vertexPos;
 
-        vVertex = vec3(vertexPos);
-        lightPos = vec3(uPMatrix*uVMatrix*uLightMatrix*vec4(0.0, 0.0, 0.0, 1.0));
+        worldVertex = vec3(uMMatrix*vec4(aVertexPosition, 1.0));
+        normal = uNormalMatrix * aNormal;
+
+        lightPos = vec3(uLightModelMatrix * vec4(0.0,0.0,0.0,1.0));
+        camPos = vec3(uCamModelMatrix * vec4(0.0,0.0,0.0,1.0));
     }
 </script>
-<!--  ************** WATER Shaders ************* --> 
 
+<!--  ************** SKY Shaders ************* -->
+<!--  ************** SKY Fragment Shader ************* --> 
+<script id="sky-shader-fs" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision mediump float;
+
+    uniform vec3 color1;
+    uniform vec3 color2;
+    uniform float offset;
+
+    varying vec3 vPos;
+    varying vec3 camPos;
+
+    vec3 lerpColor(vec3 c0, vec3 c1, float t){
+        return c0 * t + c1 * (1.0-t);
+    }
+
+    void main(void) {
+        vec3 viewDir = normalize(vPos - camPos);
+
+        vec3 col = lerpColor(color1, color2, viewDir.y + offset);
+
+        gl_FragColor = vec4(col,1.0);
+    }
+</script>
+
+<!--  ************** SKY Vertex Shader ************* -->
+<script id="sky-shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
+
+    attribute vec3 aVertexPosition;
+
+    uniform vec3 color1;
+    uniform vec3 color2;
+    uniform float offset;
+    uniform mat4 uVMatrix;
+
+    varying vec3 vPos;
+    varying vec3 camPos;
+
+    void main(void) {
+        vPos = vec3(uVMatrix * vec4(aVertexPosition.xy, -1.0, 1.0));
+        camPos = vec3(uVMatrix * vec4(0.0,0.0,0.0,1.0));
+
+        gl_Position = vec4(aVertexPosition.xy, -1.0, 1.0);
+    }
+</script>
+
+<!--  ************** UNLIT Shaders ************* -->
+<!--  ************** UNLIT Fragment Shader ************* --> 
+<script id="unlit-shader-fs" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision mediump float;
+
+    uniform vec3 uColor;
+    
+    void main(void) {
+        
+        gl_FragColor = vec4(uColor, 1.0);
+    }
+</script>
+
+<!--  ************** UNLIT Vertex Shader ************* -->
+<script id="unlit-shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
+
+    attribute vec3 aVertexPosition;
+    uniform vec3 uColor;
+
+    uniform mat4 uMMatrix;
+    uniform mat4 uVMatrix;
+    uniform mat4 uPMatrix;
+
+    void main(void) {
+        gl_Position = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<!--  ************** WATER Shaders ************* --> 
 <!--  ************** WATER Fragment Shader ************* --> 
 <script id="water-shader-fs" type="x-shader/x-fragment">
     #extension GL_OES_standard_derivatives : enable
@@ -104,8 +271,9 @@
     }
 </script>
     
-<!--  ************** Vertex Shader ************* -->
+<!--  ************** WATER Vertex Shader ************* -->
 <script id="water-shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
 
     attribute vec3 aVertexPosition;
     uniform vec3 uColor;
@@ -132,70 +300,168 @@
 </script>
 
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
-<script type="text/javascript" src="shaders_setup.js"></script>
+<script type="text/javascript" src="shadersAndMaterials.js"></script>
 <script type="text/javascript" src="perlin.js"></script>
+<script type="text/javascript" src="programSettings.js"></script>
 <script type="text/javascript" src="customMath.js"></script>
 <script type="text/javascript" src="entities.js"></script>
 <script type="text/javascript" src="main.js"></script>
 
 </head>
 
-
+<link rel="shortcut icon" href="favicon.ico" >
 <body onload="webGLStart(); initUI();">
     <div class="container">
         <canvas id="code03-canvas"style="border:none;"width="700"height="700"></canvas>
-        <div id = "fpsCounter">FPS: 0</div>
+        <div style="color: #FFFFFF" id = "fpsCounter">FPS: 0</div>
         <fieldset>
-            <legend>Program Options:</legend>
-            <div>
-                <input type="checkbox" id="flatShading" name="flatShading" checked>
-                <label for="flatShading">Flat Shading</label>
+            <legend><b>Program Options:</b></legend>
+            <!--  ************* OPTION TABS *************** -->
+            <div class="tab">
+                <button class="tablinks active" onclick="openTab(event, 'All')">All</button>
+                <button class="tablinks" onclick="openTab(event, 'Lighting')">Lighting</button>
+                <button class="tablinks" onclick="openTab(event, 'Camera')">Camera</button>
+                <button class="tablinks" onclick="openTab(event, 'Scene')">Scene</button>
             </div>
 
-            <div>
-                <input type="checkbox" id="ambientLighting" name="ambientLighting" checked>
-                <label for="ambientLighting">Ambient Lighting</label>
-            </div>
-            <div class="slidecontainer">
-                <output id="ambientLightStrengthText">&emsp;Strength: 0.25</output>
-                <input type="range" class="slider" id="ambientLightStrengthSlider" step="0.01" min="0" max="1" value="0.25">
+            <!--  ***************************************** -->
+
+            <div id = "Lighting" class="tabcontent">
+                <!--  *********** BACKGROUND COLOR ************ -->
+                <div class="colorcontainer">
+                    <input type="checkbox" id="drawSolidBackground" name="drawSolidBackground" autocomplete="off">
+                    <label for="drawSolidBackground">Solid Background</label>
+
+                    <div class="colorcontainer">
+                        <output id="backgroundColorText"><b>&emsp;&emsp;Color: </b></output>
+                        <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF" autocomplete="off">
+                    </div>
+                </div>
+                <!--  ***************************************** -->
+
+                <!--  ************** GRADIENT SKY ************* -->
+                <div>
+                    <input type="checkbox" id="drawGradientSky" name="drawGradientSky" checked autocomplete="off">
+                    <label for="drawGradientSky">Gradient Sky</label>
+                </div>
+                <div class="colorcontainer">
+                    <output id="skyColor1Text"><b>&emsp;&emsp;Color 1: </b></output>
+                    <input type="color" id="skyColor1" name="skyColor1Text" value="#e66465" autocomplete="off">
+                </div>
+                <div class="colorcontainer">
+                    <output id="skyColor2Text"><b>&emsp;&emsp;Color 2: </b></output>
+                    <input type="color" id="skyColor2" name="skyColor2Text" value="#e66465" autocomplete="off">
+                </div>
+                <div class="slidecontainer">
+                    <output id="skyColorOffsetText">&emsp;&emsp;Offset:</output>
+                    <label for="skyColorOffsetSlider" id="skyColorOffsetValueLabel">0.65</label>
+                    <input type="range" class="slider" id="skyColorOffsetSlider" step="0.01" min="0" max="1" value="0.65" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
+
+                <!--  ************* LIGHT GIZMO *************** -->
+                <div>
+                    <input type="checkbox" id="drawLight" name="drawLight" autocomplete="off">
+                    <label for="drawLight">Draw Light</label>
+                </div>
+
+                <!--  ************ AMBIENT LIGHT ************** -->
+                <div class="colorcontainer">
+                    <output id="lightColorText"><b>&emsp;&emsp;Color: </b></output>
+                    <input type="color" id="lightColor" name="lightColor" value="#FFFFFF" autocomplete="off">
+                </div>
+                <div>
+                    <input type="checkbox" id="ambientLighting" name="ambientLighting" checked autocomplete="off">
+                    <label for="ambientLighting">Ambient Lighting</label>
+                </div>
+                <div class="slidecontainer">
+                    <output id="ambientLightStrengthText">&emsp;&emsp;Strength:</output>
+                    <label for="ambientLightStrengthSlider" id="ambientLightStrengthValueLabel">0.25</label>
+                    <input type="range" class="slider" id="ambientLightStrengthSlider" step="0.01" min="0" max="1" value="0.25" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
+
+                <!--  ************ DIFFUSE LIGHT ************** -->
+                <div>
+                    <input type="checkbox" id="diffuseLighting" name="diffuseLighting" checked autocomplete="off">
+                    <label for="diffuseLighting">Diffuse Lighting</label>
+                </div>
+                <div class="slidecontainer">
+                    <output id="diffuseLightStrengthText">&emsp;&emsp;Strength:</output>
+                    <label for = "diffuseLightStrengthSlider" id="diffuseLightStrengthValueLabel">1.00</label>
+                    <input type="range" class="slider" id="diffuseLightStrengthSlider" step="0.01" min="0" max="1" value="1.0" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
+
+                <!--  ************ SPECULAR LIGHT ************* -->
+                <div>
+                    <input type="checkbox" id="specularLighting" name="specularLighting" checked autocomplete="off">
+                    <label for="specularLighting">Specular Lighting</label>
+                </div>
+                <div class="slidecontainer">
+                    <output id="specularLightStrengthText">&emsp;&emsp;Strength:</output>
+                    <label for="specularLightStrengthSlider" id="specularLightStrengthValueLabel">0.50</label>
+                    <input type="range" class="slider" id="specularLightStrengthSlider" step="0.01" min="0" max="1" value="0.5" autocomplete="off">
+                </div>
+                <div class="slidecontainer">
+                    <output id="specularLightFocusText">&emsp;&emsp;Focus:</output>
+                    <label for="specularLightFocusSlider" id="specularLightFocusValueLabel">5.00</label>
+                    <input type="range" class="slider" id="specularLightFocusSlider" step="0.01" min="0" max="8" value="5.0" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
             </div>
 
-            <div>
-                <input type="checkbox" id="freeCam" name="freeCam">
-                <label for="freeCam">Free Cam</label>
+            <!--  ***************************************** -->
+
+            <div id = "Camera" class="tabcontent">
+                <!--  ************ CAMERA OPTIONS ************* -->
+                <div>
+                    <input type="checkbox" id="freeCam" name="freeCam" autocomplete="off">
+                    <label for="freeCam">Free Cam</label>
+                </div>
+
+                <div>
+                    <input type="checkbox" id="followObject" name="followObject" autocomplete="off">
+                    <label for="followObject">Follow Object</label>
+                </div>
+                <!--  ***************************************** -->
             </div>
 
-            <div>
-                <input type="checkbox" id="followObject" name="followObject">
-                <label for="followObject">Follow Object</label>
-            </div>
+            <!--  ***************************************** -->
 
-            <div>
-                <input type="checkbox" id="drawGroundPlane" name="drawGroundPlane" checked>
-                <label for="drawGroundPlane">Draw Ground Plane</label>
-            </div>
-            <div class="colorcontainer">
-                <output id="groundPlaneColorText"><b>&emsp;&emsp;Color: </b></output>
-                <input type="color" id="groundPlaneColor" name="groundPlaneColor" value="#e66465">
-            </div>
+            <div id = "Scene" class="tabcontent">
+                <!--  ************* GROUND PLANE ************** -->
+                <div>
+                    <input type="checkbox" id="drawGroundPlane" name="drawGroundPlane" checked autocomplete="off">
+                    <label for="drawGroundPlane">Draw Ground Plane</label>
+                </div>
+                <div class="colorcontainer">
+                    <output id="groundPlaneColorText"><b>&emsp;&emsp;Color: </b></output>
+                    <input type="color" id="groundPlaneColor" name="groundPlaneColor" value="#e66465" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
 
-            <div>
-                <input type="checkbox" id="drawTerrain" name="drawTerrain">
-                <label for="drawTerrain">Draw Terrain</label>
-            </div>
-            <div class="colorcontainer">
-                <output id="terrainColorText"><b>&emsp;&emsp;Color: </b></output>
-                <input type="color" id="terrainColor" name="terrainColor" value="#e66465">
-            </div>
+                <!--  *************** TERRAIN ***************** -->
+                <div>
+                    <input type="checkbox" id="drawTerrain" name="drawTerrain" autocomplete="off">
+                    <label for="drawTerrain">Draw Terrain</label>
+                </div>
+                <div class="colorcontainer">
+                    <output id="terrainColorText"><b>&emsp;&emsp;Color: </b></output>
+                    <input type="color" id="terrainColor" name="terrainColor" value="#e66465" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
 
-            <div>
-                <input type="checkbox" id="drawWater" name="drawWater">
-                <label for="drawWater">Draw Water</label>
-            </div>
-            <div class="colorcontainer">
-                <output id="waterColorText"><b>&emsp;&emsp;Color: </b></output>
-                <input type="color" id="waterColor" name="waterColor" value="#e66465">
+                <!--  **************** WATER ****************** -->
+                <div>
+                    <input type="checkbox" id="drawWater" name="drawWater" autocomplete="off">
+                    <label for="drawWater">Draw Water</label>
+                </div>
+                <div class="colorcontainer">
+                    <output id="waterColorText"><b>&emsp;&emsp;Color: </b></output>
+                    <input type="color" id="waterColor" name="waterColor" value="#e66465" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
             </div>
         </fieldset>
     </div>
@@ -205,24 +471,144 @@
 
 <!-- Script for keeping UI labels updated -->
 <script type="text/javascript">
+    function openTab(event, tabName){
+        var i, tabcontent, tablinks;
+        if(tabName == 'All'){
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "block";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                if(!tablinks[i].innerHTML.includes('All')){
+                    tablinks[i].className = tablinks[i].className.replace(" active", "");
+                }
+                else if(!tablinks[i].className.includes("active")){
+                    tablinks[i].className += " active";
+                }
+            }
+            return;
+        }
+        
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tablinks");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).style.display = "block";
+        event.currentTarget.className += " active";
+    }
+
     function initUI(){
+        openTab(event, 'All');
+        //=====================INITIALIZE=COLORS==========================
+        document.getElementById("backgroundColor").value = getBackgroundColorAsHex();
         document.getElementById("groundPlaneColor").value = getGroundPlaneColorAsHex();
         document.getElementById("terrainColor").value = getTerrainColorAsHex();
         document.getElementById("waterColor").value = getWaterColorAsHex();
+        document.getElementById("skyColor1").value = getSkyColor1AsHex();
+        document.getElementById("skyColor2").value = getSkyColor2AsHex();
+        document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
 
+        //======================BACKGROUND=COLOR==========================
+        document.getElementById("drawSolidBackground").oninput = function() {
+            document.getElementById("drawGradientSky").checked = !document.getElementById("drawGradientSky").checked;
 
-        document.getElementById("flatShading").oninput = function() {
-            setFlatShadingActive(document.getElementById("flatShading").checked);
+            setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
+            setShouldDrawGradientSky(document.getElementById("drawGradientSky").checked);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
         };
+        document.getElementById("backgroundColor").oninput = function() {
+            setBackgroundColor(document.getElementById("backgroundColor").value);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
+        };
+        //================================================================
+
+        //========================GRADIENT=SKY============================
+        document.getElementById("drawGradientSky").oninput = function() {
+            document.getElementById("drawSolidBackground").checked = !document.getElementById("drawSolidBackground").checked;
+            
+            setShouldDrawGradientSky(document.getElementById("drawGradientSky").checked);
+            setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
+        };
+        document.getElementById("skyColor1").oninput = function() {
+            setSkyColor1(document.getElementById("skyColor1").value);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
+        };
+        document.getElementById("skyColor2").oninput = function() {
+            setSkyColor2(document.getElementById("skyColor2").value);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
+        };
+        document.getElementById("skyColorOffsetSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("skyColorOffsetSlider").value).toFixed(2);
+            document.getElementById("skyColorOffsetValueLabel").innerHTML = roundedVal;
+            setSkyColorOffset(roundedVal);
+
+            document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
+        };
+        //================================================================
+
+        //=======================LIGHT=GIZMO==============================
+        document.getElementById("drawLight").oninput = function() {
+            setShouldDrawLight(document.getElementById("drawLight").checked);
+        };
+        document.getElementById("lightColor").oninput = function() {
+            setLightColor(document.getElementById("lightColor").value);
+        };
+        //================================================================
+
+        //=====================AMBIENT=LIGHTING===========================
         document.getElementById("ambientLighting").oninput = function() {
             var roundedVal = parseFloat(document.getElementById("ambientLightStrengthSlider").value).toFixed(2);
             setAmbientLightActive(document.getElementById("ambientLighting").checked, roundedVal);
         };
         document.getElementById("ambientLightStrengthSlider").oninput = function() {
             var roundedVal = parseFloat(document.getElementById("ambientLightStrengthSlider").value).toFixed(2);
-            document.getElementById("ambientLightStrengthText").innerHTML = "&emsp;Strength: " + roundedVal;
+            document.getElementById("ambientLightStrengthValueLabel").innerHTML = roundedVal;
             setAmbientLightStrength(roundedVal);
         };
+        //================================================================
+
+        //====================DIFFUSE=LIGHTING============================
+        document.getElementById("diffuseLighting").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("diffuseLightStrengthSlider").value).toFixed(2);
+            setDiffuseLightActive(document.getElementById("diffuseLighting").checked, roundedVal);
+        };
+        document.getElementById("diffuseLightStrengthSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("diffuseLightStrengthSlider").value).toFixed(2);
+            document.getElementById("diffuseLightStrengthValueLabel").innerHTML = roundedVal;
+            setDiffuseLightStrength(roundedVal);
+        };
+        //================================================================
+        
+        //=====================SPECULAR=LIGHTING==========================
+        document.getElementById("specularLighting").oninput = function() {
+            var focusVal = parseInt(document.getElementById("specularLightFocusSlider").value);
+            var strengthVal = parseFloat(document.getElementById("specularLightStrengthSlider").value).toFixed(2);
+            setSpecularLightActive(document.getElementById("specularLighting").checked, strengthVal, focusVal);
+        };
+        document.getElementById("specularLightStrengthSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("specularLightStrengthSlider").value).toFixed(2);
+            document.getElementById("specularLightStrengthValueLabel").innerHTML = roundedVal;
+            setSpecularLightStrength(roundedVal);
+        };
+        document.getElementById("specularLightFocusSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("specularLightFocusSlider").value);
+            document.getElementById("specularLightFocusValueLabel").innerHTML = roundedVal.toFixed(2);
+            setSpecularLightFocus(roundedVal);
+        };
+        //================================================================
+
+        //=======================CAMERA=OPTIONS===========================
         document.getElementById("freeCam").oninput = function() {
             document.getElementById("followObject").checked = false;
             setFollowObjectActive(document.getElementById("followObject").checked);
@@ -235,26 +621,33 @@
 
             setFollowObjectActive(document.getElementById("followObject").checked);
         };
+        //================================================================
 
+        //=======================GROUND=PLANE=============================
         document.getElementById("drawGroundPlane").oninput = function() {
             setShouldDrawGroundPlane(document.getElementById("drawGroundPlane").checked);
         };
         document.getElementById("groundPlaneColor").oninput = function() {
             setGroundPlaneColor(document.getElementById("groundPlaneColor").value);
         };
+        //================================================================
 
+        //==========================TERRAIN===============================
         document.getElementById("drawTerrain").oninput = function() {
             setShouldDrawTerrain(document.getElementById("drawTerrain").checked);
         };
         document.getElementById("terrainColor").oninput = function() {
             setTerrainColor(document.getElementById("terrainColor").value);
         };
+        //================================================================
 
+        //===========================WATER================================
         document.getElementById("drawWater").oninput = function() {
             setShouldDrawWater(document.getElementById("drawWater").checked);
         };
         document.getElementById("waterColor").oninput = function() {
             setWaterColor(document.getElementById("waterColor").value);
         };
+        //================================================================
     }
 </script>

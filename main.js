@@ -1,15 +1,9 @@
-
 //The OpenGL Context
 var gl;
-//The default shader program
-var shaderProgram;
-//The shader program for animated, transparent water
-var waterShaderProgram;
 //The canvas element being drawn to
 var canvas;
 
-//Settings controlled by UI
-var flatShading = true, ambientLighting = true, freeCam = false, followObject = false, drawGroundPlane = true, drawTerrain = false, drawWater = false;
+var currentMaterial;
 
 //////////// Init OpenGL Context etc. ///////////////
 
@@ -25,127 +19,94 @@ function initGL(canvas) {
     }
 }
 
+function createGameObjectFromJSON(filename, modelTransform, modelColor){
+    let request = new XMLHttpRequest();
+    request.open("GET", filename);
+
+    request.onreadystatechange = function (){
+        if(request.readyState == 4){
+            loadJSON(JSON.parse(request.responseText), modelTransform, modelColor);
+        }
+    }
+    request.send();
+}
+function loadJSON(modelData, modelTransform, modelColor){
+    var vertices = modelData.vertices;
+    var faces = modelData.faces;
+    var indices = [];
+    //NOTE: Every model I looked at from: https://rigmodels.com/index.php has their JSON format made for Three.Javascript
+    //This is fine for the vertices, HOWEVER the JSON format for Three.js uses faces, which, if it was like .obj, would be fine as there is plenty of documentation about the .obj format.
+    //But no matter HOW HARD I looked I could not find any information on the Three.js JSON format. So I spent some time looking at the values in the faces attribute of the JSON
+    //And it seems that the last 3 integers of each line are the indices I need. For every model I looked at each "line" in the array was 11 integers.
+    //So to get all the indices we need, we loop skipping 11 spaces each time so we are always reading the last 3 integers in the line.
+    //This retrieves the correct indices for every model I could fine. But, more than likely a length of 11 is not the default and this wont work for some models.
+    for(let i = 8; i < faces.length; i+=11){
+        indices.push(faces[i]);
+        indices.push(faces[i+1]);
+        indices.push(faces[i+2]);
+    }
+
+    var mesh = new Mesh();
+    mesh.createNewBuffers(vertices, indices);
+    mesh.calculateNormals(vertices, indices);
+    var modelObject = new WorldObject(mesh, modelTransform, modelColor);
+    return modelObject;
+}
+
 ///////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////
 
 requestAnimationFrame(mainProgramLoop);
 var then = 0;
+var currentTime;
 var deltaTime = 0;
 var lastPointerLockElement;
 
-var camParent;
 var cam;
-var cameraRotX = 0, playerRotY = 0;
-var camStartPos = [10,5,-40];
+
+var normalMatrix;
 
 var mainLightObject;
-var ambientLightStrength = 0.25;
-var flatShadingStrength = 1.0;
 
 var heirarchicalObject;
 var groundPlaneObject, terrainObject, waterObject;
+var skyQuad;
 
 var keyStates = {};
 
-//==============Functions=Called=By=UI=======================
-function setFlatShadingActive(boolValue){
-    flatShading = boolValue;
-    flatShadingStrength = boolValue ? 1.0 : 0.0;
-}
-function setAmbientLightActive(boolValue, value){
-    ambientLighting = boolValue;
-    ambientLightStrength = boolValue ? value : 1.0;
-}
-function setAmbientLightStrength(value){
-    if(ambientLighting){
-        ambientLightStrength = value;
-    }
-}
-function setFreeCamActive(boolValue){
-    freeCam = boolValue;
-    if(!boolValue){
-        camParent.getTransform().setLocalRotationFromEulerAngles([0,0,0]);
-        cam.lookAt(camParent.getTransform().getLocalPosition(), heirarchicalObject.getTransform().getLocalPosition(), [0,1,0]);
-    }
-}
-function setFollowObjectActive(boolValue){
-    followObject = boolValue;
-}
-
-function setShouldDrawGroundPlane(boolValue){
-    drawGroundPlane = boolValue;
-}
-function setGroundPlaneColor(hex){
-    groundPlaneObject.setColor(hexToRGB(hex));
-}
-function getGroundPlaneColorAsHex(){
-    return rgbToHex(groundPlaneObject.getColor());
-}
-
-function setShouldDrawTerrain(boolValue){
-    drawTerrain = boolValue;
-}
-function setTerrainColor(hex){
-    terrainObject.setColor(hexToRGB(hex));
-}
-function getTerrainColorAsHex(){
-    return rgbToHex(terrainObject.getColor());
-}
-
-function setShouldDrawWater(boolValue){
-    drawWater = boolValue;
-}
-function setWaterColor(hex){
-    waterObject.setColor(hexToRGB(hex));
-}
-function getWaterColorAsHex(){
-    return rgbToHex(waterObject.getColor());
-}
-
 //===========================================================
-
 function initScene() {
+    normalMatrix = mat3.create();
     //Initialize noise with random seed (Math.random() returns value between [0,1) but gets scaled by 65536 in perlin.js)
     noise.seed(Math.random());
 
     //==========Initialize=Entity=Mesh=Primitives============
     initMeshPrimitives();
     //=======================================================
+    skyQuad = new WorldObject(screenSizeQuadMesh, new Transform(null), [1.0,0.0,0.0], skyMat);
 
     //===============Camera/Lighting=Objects=================
-    camParent = new WorldObject(null, new Transform(null), null);
-    cam = new Camera(new Transform(camParent.getTransform()), 75, 1.0, 0.1, 100);
-    camParent.getTransform().setLocalPosition(camStartPos);
+    cam = new Camera(new Transform(null), 60, 1.0, 0.1, 500);
 
-    mainLightObject = new WorldObject(null, new Transform(null), null);
-    mainLightObject.getTransform().setLocalPosition([-25,15,25]);
+    mainLightObject = new Sphere(new Transform(null), [1.0, 1.0, 1.0], defaultSphereMeshResolution, 0.5, unlitMat);
+    mainLightObject.getTransform().setLocalPosition([25,10,-25]);
+    mainLightObject.getTransform().setLocalScale([0.5,0.5,0.5]);
     //=======================================================
     
     //==============HIERARCHICAL=WORLD=OBJECT================
-    heirarchicalObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.25);
-    heirarchicalObject.getTransform().setLocalPosition([25,1,-25]);
-    heirarchicalObject.getTransform().setLocalScale([1,2,1]);
+    heirarchicalObject = new Sphere(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
+    heirarchicalObject.getTransform().setLocalPosition([25,0.5,-25]);
 
-    var sphereObject = new Sphere(new Transform(heirarchicalObject.getTransform()), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
-    sphereObject.getTransform().setLocalPosition([0,0.5,0]);
-    sphereObject.getTransform().setLocalScale([1,0.5,1]);
+    cubeObject = new Cube(new Transform(null), [Math.random(), Math.random(), Math.random()]);
+    cubeObject.getTransform().setLocalPosition([20,0.5,-20]);
 
-    var leftArm = new Cube(new Transform(sphereObject.getTransform()), [Math.random(),Math.random(),Math.random()]);
-    var rightArm = new Cube(new Transform(sphereObject.getTransform()), [Math.random(),Math.random(),Math.random()]);
-    leftArm.getTransform().setLocalPosition([-0.75,0,0]);
-    rightArm.getTransform().setLocalPosition([0.75,0,0]);
-    leftArm.getTransform().setLocalScale([0.75,0.25,0.25]);
-    rightArm.getTransform().setLocalScale([0.75,0.25,0.25]);
+    pyramidObject = new Pyramid(new Transform(null), [Math.random(), Math.random(), Math.random()]);
+    pyramidObject.getTransform().setLocalPosition([15,0.5,-15]);
 
-    var pyramidObject = new Pyramid(new Transform(sphereObject.getTransform()), [Math.random(), Math.random(), Math.random()]);
-    pyramidObject.getTransform().setLocalPosition([0,0,-0.5]);
-    pyramidObject.getTransform().setLocalRotationFromEulerAngles([degToRad(90),0,0]);
-    pyramidObject.getTransform().setLocalScale([0.5,0.5,0.5]);
+    cylinderObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
+    cylinderObject.getTransform().setLocalPosition([20,0.5,-25]);
 
     //=======================================================
-
-    var cubeTest = new Cube(new Transform(null), [1,0,0]);
-    cubeTest.getTransform().setLocalScale(1,2,1);
 
     //==============Ground=Plane=World=Object================
     groundPlaneObject = new WorldObject(generatePlaneMesh([50,50],80), new Transform(null), [Math.random(),Math.random(),Math.random()]);
@@ -156,10 +117,12 @@ function initScene() {
     //=======================================================
 
     //==============Water=Mesh=World=Object==================
-    waterObject = new WorldObject(generatePlaneMesh([50,50], 80), new Transform(null), [0.0,0.0,1.0], false);
+    waterObject = new WorldObject(generatePlaneMesh([50,50], 80), new Transform(null), [0.0,0.0,1.0], waterMat);
     //=======================================================
 
-    cam.lookAt(camParent.getTransform().getLocalPosition(),heirarchicalObject.getTransform().getLocalPosition(),[0,1,0]);
+    cam.lookAt(camStartPos,heirarchicalObject.getTransform().getLocalPosition(),[0,1,0]);
+
+    console.log(materialObjectMap);
 }
 ///////////////////////////////////////////////////////////////
 function mainProgramLoop(now) {
@@ -171,6 +134,7 @@ function mainProgramLoop(now) {
     //=================Time=Calculation======================
     //Calculate current time(now) and convert to seconds
     now *= 0.001;
+    currentTime = now;
     //Update FPS variable
     updateFPS(now);
     //Calculate the change in time between the current frame and the last (in seconds)
@@ -196,63 +160,54 @@ function mainProgramLoop(now) {
     //=======================================================
 
     if(!freeCam && followObject){
-        cam.lookAt(camParent.getTransform().getLocalPosition(), heirarchicalObject.getTransform().getLocalPosition(), [0,1,0]);
+        cam.lookAt(cam.getTransform().getLocalPosition(), heirarchicalObject.getTransform().getLocalPosition(), [0,1,0]);
     }
-
-    //================DRAW=WORLD=OBJECTS=====================
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.disable(gl.BLEND);
+
+    //This loop might be bad, but I think it optimizes rendering
+    //Each shader is used to create a material, objects are sorted in the map by their material.
+    //The value of the material Map is another map, whose key is a mesh, and value is a list of game objects
+    //So for each material bind the properties specific to that material, then for each mesh with that material bind the vertices/indices/normals specific to that mesh
+    //Finally for each game object using that mesh bind the object specific properties (transformation, color, etc.)
+    //This could be highly improved by using instancing instead (Which I plan to do in the future)
+    //======================DRAW=OBJECTS=========================
+    for(var material of materialList){
+        if(swapToNewMaterial(material)){
+
+            var worldObjectKeys = currentWorldObjectMap.keys();
+            for(var key of worldObjectKeys){
+                currentMaterial.bindMesh(key);
     
-    gl.useProgram(shaderProgram);
-    var worldObjectKeys = worldObjectMap.keys();
-    for(var key of worldObjectKeys){
-        key.bindVertexBuffer();
-        key.bindIndexBuffer();
+                currentMaterial.bindShaderOneOff(key);
+    
+                var worldObjectList = currentWorldObjectMap.get(key);
+                for(let i = 0; i < worldObjectList.length; i++){
+                    //Some options prevent certain objects from rendering, if the option is unselected dont render that object
+                    //This creates a lot of conditional statements on each iteration so maybe just remove the object from the map?
+                    if(!drawTerrain && worldObjectList[i] == terrainObject){
+                        continue;
+                    }
+                    if(!drawGroundPlane && worldObjectList[i] == groundPlaneObject){
+                        continue;
+                    }
+                    if(!drawWater && worldObjectList[i] == waterObject){
+                        continue;
+                    }
+                    //The light game object is composed of 6 faces that create a sphere, the faces are children of the light game object and are what gets rendered
+                    //So check if the object's parent is the light object, if so then this is a face of the light object so do not render
+                    if(!drawLight && worldObjectList[i].getTransform().getParent() == mainLightObject.getTransform()){
+                        continue;
+                    }
+                    if(!drawGradientSky && worldObjectList[i] == skyQuad){
+                        continue;
+                    }
 
-        gl.uniform1f(shaderProgram.ambientUniform, ambientLightStrength);
-        gl.uniform1f(shaderProgram.flatShadingStrengthUniform, flatShadingStrength);
-        gl.uniformMatrix4fv(shaderProgram.lightMatrixUniform, false, mainLightObject.getTransform().getWorldTransformationMatrix());
-        gl.uniformMatrix4fv(shaderProgram.vMatrixUniform, false, cam.getViewMatrix());
-        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, cam.getProjectionMatrix());
-
-        var worldObjectList = worldObjectMap.get(key);
-        for(let i = 0; i < worldObjectList.length; i++){
-            if(!drawTerrain && worldObjectList[i] == terrainObject){
-                continue;
+                    currentMaterial.bindShaderObject(worldObjectList[i]);
+                    key.draw();
+                }
             }
-            if(!drawGroundPlane && worldObjectList[i] == groundPlaneObject){
-                continue;
-            }
-            gl.uniformMatrix4fv(shaderProgram.mMatrixUniform, false, worldObjectList[i].getTransform().getWorldTransformationMatrix());
-            gl.uniform3fv(shaderProgram.colorUniform, worldObjectList[i].getColor());
-            key.draw();
         }
     }
-    //=======================================================
-    
-    //====================DRAW=WATER=========================
-    if(drawWater){
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-        gl.useProgram(waterShaderProgram);
-        gl.bindBuffer(gl.ARRAY_BUFFER, waterObject.getMesh().getVertexBuffer());
-        gl.vertexAttribPointer(waterShaderProgram.vertexPositionAttribute, waterObject.getMesh().getVertexBuffer().vertexSize, gl.FLOAT, false, 0, 0);
-
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, waterObject.getMesh().getIndexBuffer());
-        gl.uniform1f(waterShaderProgram.timeUniform, now);
-        gl.uniform1f(waterShaderProgram.ambientUniform, ambientLightStrength);
-        gl.uniform1f(waterShaderProgram.flatShadingStrengthUniform, flatShadingStrength);
-        gl.uniformMatrix4fv(waterShaderProgram.lightMatrixUniform, false, mainLightObject.getTransform().getWorldTransformationMatrix());
-        gl.uniformMatrix4fv(waterShaderProgram.vMatrixUniform, false, cam.getViewMatrix());
-        gl.uniformMatrix4fv(waterShaderProgram.pMatrixUniform, false, cam.getProjectionMatrix());
-
-        gl.uniformMatrix4fv(waterShaderProgram.mMatrixUniform, false, waterObject.getTransform().getWorldTransformationMatrix());
-        gl.uniform3fv(waterShaderProgram.colorUniform, waterObject.getColor());
-
-        waterObject.getMesh().draw();
-    }
-
     //=======================================================
 
     lastPointerLockElement = document.pointerLockElement;
@@ -285,35 +240,51 @@ function handleKeyPress(){
         aircraftCameraRotation();
         heirarchicalObjectMovement();
     }
+    lightObjectMovement();
+}
+function lightObjectMovement(){
+    if(keyStates["arrowup"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([0,0,-deltaTime * moveSpeed]);
+    }
+    if(keyStates["arrowdown"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([0,0,deltaTime * moveSpeed]);
+    }
+    if(keyStates["arrowleft"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([-deltaTime * moveSpeed,0,0]);
+    }
+    if(keyStates["arrowright"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([deltaTime * moveSpeed,0,0]);
+    }
+    if(keyStates["pageup"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([0,deltaTime * moveSpeed,0]);
+    }
+    if(keyStates["pagedown"]){
+        mainLightObject.getTransform().addVec3ToLocalPosition([0,-deltaTime * moveSpeed,0]);
+    }
 }
 var pitch = 0,yaw = 0,roll = 0;
 var rotateSpeed = 20;
 function aircraftCameraRotation(){
     if(keyStates["p"]){
         if(keyStates["shift"]){
-            pitch -= deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([degToRad(pitch),0,0]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldRight(), degToRad(-deltaTime*rotateSpeed)));
         }else{
-            pitch += deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([degToRad(pitch),0,0]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldRight(), degToRad(deltaTime*rotateSpeed)));
         }
     }
     if(keyStates["y"]){
         if(keyStates["shift"]){
-            yaw -= deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([0,degToRad(yaw),0]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldUp(), degToRad(-deltaTime*rotateSpeed)));
         }else{
-            yaw += deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([0,degToRad(yaw),0]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldUp(), degToRad(deltaTime*rotateSpeed)));
         }
     }
     if(keyStates["r"]){
         if(keyStates["shift"]){
-            roll -= deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([0,0,degToRad(roll)]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldForward(), degToRad(-deltaTime*rotateSpeed)));
+
         }else{
-            roll += deltaTime * rotateSpeed;
-            cam.getTransform().setLocalRotationFromEulerAngles([0,0,degToRad(roll)]);
+            cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldForward(), degToRad(deltaTime*rotateSpeed)));
         }
     }
 }
@@ -343,33 +314,33 @@ function heirarchicalObjectMovement(){
 function freeCamMovement(){
     //FORWARD
     if(keyStates["w"]){
-        var playerForward = camParent.getTransform().getWorldForward();
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerForward[0], moveSpeed*deltaTime*playerForward[1], moveSpeed*deltaTime*playerForward[2]]);
+        var playerForward = cam.getTransform().getWorldForward();
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerForward[0], moveSpeed*deltaTime*playerForward[1], moveSpeed*deltaTime*playerForward[2]]);
     }
     //LEFT
     if(keyStates["a"]){
-        var playerLeft = vec3.negate(camParent.getTransform().getWorldRight());
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerLeft[0], moveSpeed*deltaTime*playerLeft[1], moveSpeed*deltaTime*playerLeft[2]]);
+        var playerLeft = vec3.negate(cam.getTransform().getWorldRight());
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerLeft[0], moveSpeed*deltaTime*playerLeft[1], moveSpeed*deltaTime*playerLeft[2]]);
     }
     //BACK
     if(keyStates["s"]){
-        var playerBack = vec3.negate(camParent.getTransform().getWorldForward());
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerBack[0], moveSpeed*deltaTime*playerBack[1], moveSpeed*deltaTime*playerBack[2]]);
+        var playerBack = vec3.negate(cam.getTransform().getWorldForward());
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerBack[0], moveSpeed*deltaTime*playerBack[1], moveSpeed*deltaTime*playerBack[2]]);
     }
     //RIGHT
     if(keyStates["d"]){
-        var playerRight = camParent.getTransform().getWorldRight();
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerRight[0], moveSpeed*deltaTime*playerRight[1], moveSpeed*deltaTime*playerRight[2]]);
+        var playerRight = cam.getTransform().getWorldRight();
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*playerRight[0], moveSpeed*deltaTime*playerRight[1], moveSpeed*deltaTime*playerRight[2]]);
     }
     //UP
     if(keyStates["e"]){
         var camUp = cam.getTransform().getWorldUp();
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camUp[0], moveSpeed*deltaTime*camUp[1], moveSpeed*deltaTime*camUp[2]]);
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camUp[0], moveSpeed*deltaTime*camUp[1], moveSpeed*deltaTime*camUp[2]]);
     }
     //DOWN
     if(keyStates["q"]){
         var camDown = vec3.negate(cam.getTransform().getWorldUp());
-        camParent.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camDown[0], moveSpeed*deltaTime*camDown[1], moveSpeed*deltaTime*camDown[2]]);
+        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camDown[0], moveSpeed*deltaTime*camDown[1], moveSpeed*deltaTime*camDown[2]]);
     }
     //ESCAPE
     //"esc" added for redundancy as allegedly older versions of Mozilla register the Escape key as "esc" instead of "escape"
@@ -423,13 +394,9 @@ function onCanvasMouseMove(event) {
         lastMouseX = mouseX;
         lastMouseY = mouseY;
     }
-
-    cameraRotX += mouseDeltaY * deltaTime * mouseSens;
-    cameraRotX = clamp(cameraRotX, -90, 90);
-    cam.getTransform().setLocalRotationFromEulerAngles([degToRad(cameraRotX), 0, 0]);
+    cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(cam.getTransform().getWorldRight(), degToRad(mouseDeltaY * mouseSens * deltaTime)))
     
-    playerRotY += mouseDeltaX * deltaTime * mouseSens;
-    camParent.getTransform().setLocalRotationFromEulerAngles([0,degToRad(playerRotY),0]);
+    cam.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis([0,1,0], degToRad(mouseDeltaX * mouseSens * deltaTime)))
 }
 
 ///////////////////////////////////////////////////////////////
@@ -439,43 +406,13 @@ function webGLStart() {
 
     initGL(canvas);
     gl.getExtension('OES_standard_derivatives');
-    initShaders();
-    waterShaderProgram = initShader("water-shader-vs", "water-shader-fs")
 
-    //==============DEFAULT=SHADER=VARIABLES=================
-    shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
-    gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
-
-    shaderProgram.lightMatrixUniform = gl.getUniformLocation(shaderProgram, "uLightMatrix");
-    shaderProgram.ambientUniform = gl.getUniformLocation(shaderProgram, "uAmbient");
-    shaderProgram.flatShadingStrengthUniform = gl.getUniformLocation(shaderProgram, "uFlatShadingStrength");
-    shaderProgram.mMatrixUniform = gl.getUniformLocation(shaderProgram, "uMMatrix");
-    shaderProgram.vMatrixUniform = gl.getUniformLocation(shaderProgram, "uVMatrix");
-    shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
-    shaderProgram.colorUniform = gl.getUniformLocation(shaderProgram, "uColor");
-    //=======================================================
-    
-    //===============WATER=SHADER=VARIABLES==================
-    waterShaderProgram.vertexPositionAttribute = gl.getAttribLocation(waterShaderProgram, "aVertexPosition");
-    gl.enableVertexAttribArray(waterShaderProgram.vertexPositionAttribute);
-
-    waterShaderProgram.timeUniform = gl.getUniformLocation(waterShaderProgram, "uTime");
-    waterShaderProgram.lightMatrixUniform = gl.getUniformLocation(waterShaderProgram, "uLightMatrix");
-    waterShaderProgram.ambientUniform = gl.getUniformLocation(waterShaderProgram, "uAmbient");
-    waterShaderProgram.flatShadingStrengthUniform = gl.getUniformLocation(waterShaderProgram, "uFlatShadingStrength");
-    waterShaderProgram.mMatrixUniform = gl.getUniformLocation(waterShaderProgram, "uMMatrix");
-    waterShaderProgram.vMatrixUniform = gl.getUniformLocation(waterShaderProgram, "uVMatrix");
-    waterShaderProgram.pMatrixUniform = gl.getUniformLocation(waterShaderProgram, "uPMatrix");
-    waterShaderProgram.colorUniform = gl.getUniformLocation(waterShaderProgram, "uColor");
-    //=======================================================
-
+    initShadersAndMaterials()
     //=======================================================
     initScene();
 
     //===================OPENGL=SETTINGS=====================
 
-    //Ensures triangles are rendered in correct order so triangles that are hidden behind other triangles are not rendered in front of them.
-    gl.enable(gl.DEPTH_TEST);
     //OpenGL by default will render both sides of a triangle, since our objects are meant to be enclosed the back faces should never be seen and thus not rendered
     //So cull (dont render) the back face (NOTE: A side effect of this is that the winding-order of the indices matters...
     //if they are not put in the correct order the triangle will render in the wrong direction)
@@ -483,7 +420,7 @@ function webGLStart() {
     gl.cullFace(gl.BACK);
 
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-    gl.clearColor(1.0, 1.0, 1.0, 1.0);
+    gl.clearColor(backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0);
     //=======================================================
 
     //=================MOUSE/KEY=EVENTS======================
@@ -493,7 +430,21 @@ function webGLStart() {
     document.addEventListener('keydown', onDocumentKeyDown, false);
     document.addEventListener('keyup', onDocumentKeyUp, false);
     //=======================================================
+
+
+    var houseTransform = new Transform(null);
+    houseTransform.setLocalPosition([40,4.75,-40]);
+    houseTransform.setLocalScale([5,5,5]);
+    houseTransform.setLocalRotationFromEulerAngles([0,degToRad(-90),0]);
+    createGameObjectFromJSON("models/house.json", houseTransform, [1.0,1.0,1.0]);
+
+    var carTransform = new Transform(null);
+    carTransform.setLocalPosition([35,0.8,-32]);
+    carTransform.setLocalScale([2,2,2]);
+    carTransform.setLocalRotationFromEulerAngles([0,degToRad(235),0]);
+    createGameObjectFromJSON("models/car.json", carTransform, [1.0,1.0,1.0]);
 }
+var testModel;
 async function requestCanvasPointerLock(event){
     //If free cam is not enabled, the user is timed out from locking the cursor, any other button other than LMB is pressed...
     //the click didnt happen on the canvas, or the pointer is already locked on the canvas.
