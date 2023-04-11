@@ -29,6 +29,25 @@ function initMeshPrimitives(){
 
     //==================Unit=Cube=Mesh=======================
     var cubeVertices = [
+        // Forward face
+        -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+
+        // Back face
+        -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
+
+        // Top face
+        -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+
+        // Bottom face
+        -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+
+        // Right face
+        0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5,
+
+        // Left face
+        -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
+    ];
+    var cubeVertices = [
         -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
 
         // Back face
@@ -66,6 +85,7 @@ function initMeshPrimitives(){
 
     unitCubeMesh = new Mesh();
     unitCubeMesh.createNewBuffersWithNormals(cubeVertices, cubeIndices, cubeNormals);
+
     //=======================================================
 
     //=================Unit=Cylinder=Mesh====================
@@ -78,14 +98,27 @@ function initMeshPrimitives(){
     
     //=================Unit=Pyramid=Mesh=====================
     var pyramidVertices = [
-        0.5,-0.5,-0.5,  //Right-Bottom-Front 0
-        -0.5,-0.5,-0.5, //Left-Bottom-Front 1
-        -0.5,-0.5,0.5,  //Left-Bottom-Back 2
-        0.5,-0.5,0.5,   //Right-Bottom-Back 3
-        0.0,0.5,0.0     //Top-Middle (Pyramid peak) 4
-    ];
-    var pyramidIndices = [0,2,1,0,3,2, 0,4,3, 1,4,0, 2,4,1, 3,4,2]
+        //Forward face
+        //Right-Bottom-Front / Left-Bottom-Front / Top
+        0.5,-0.5,-0.5, -0.5,-0.5,-0.5, 0.0,0.5,0.0,
+        //Back face
+        //Right-Bottom-Back / Left-Bottom-Back / Top
+        0.5,-0.5,0.5, -0.5,-0.5,0.5, 0.0,0.5,0.0,
+        //Left face
+        //Left-Bottom-Back / Left-Bottom-Front / Top
+        -0.5,-0.5,0.5, -0.5,-0.5,-0.5, 0.0,0.5,0.0,
+        //Right face
+        //Right-Bottom-Back / Right-Bottom-Front / Top
+        0.5,-0.5,0.5, 0.5,-0.5,-0.5, 0.0,0.5,0.0,
 
+        //Bottom face (Triangle 1)
+        //Right-Bottom-Back / Right-Bottom-Front / Left-Bottom-Back
+        0.5,-0.5,0.5, 0.5,-0.5,-0.5, -0.5,-0.5,0.5,
+        //Bottom face (Triangle 2)
+        //Left-Bottom-Back / Left-Bottom-Front / Right-Bottom-Front
+        -0.5,-0.5,0.5, -0.5,-0.5,-0.5, 0.5,-0.5,-0.5,
+    ];
+    var pyramidIndices = [1,2,0, 3,5,4, 6,8,7, 10,11,9, 12,14,13, 15,16,17];
     unitPyramidMesh = new Mesh();
     unitPyramidMesh.createNewBuffers(pyramidVertices, pyramidIndices);
     unitPyramidMesh.calculateNormals(pyramidVertices, pyramidIndices);

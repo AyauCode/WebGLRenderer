@@ -262,6 +262,7 @@ function generateCylinderMesh(resolution, bottomRadius, topRadius){
     //Its not that impressive as the math wasn't that hard but I'm still kinda proud of it :D
     vertices = [];
     indices = [];
+    normals = [];
 
     //Clamp resolution first then verify it evenly divides 360
     resolution = clamp(resolution, 1, 360);
@@ -282,10 +283,14 @@ function generateCylinderMesh(resolution, bottomRadius, topRadius){
     //      If the cylinder needs to be scaled or rotated it can be be done using the WorldObject Transform
     for(let i = 0; i < resolution; i++){
         vertices.push(bottomRadius*Math.cos(degToRad(i*angle)), -0.5, -bottomRadius*Math.sin(degToRad(i*angle)));
+
+        normals.push(bottomRadius*Math.cos(degToRad(i*angle)), 0, -bottomRadius*Math.sin(degToRad(i*angle)));
     }
     //Add the vertices lying on the edge of the top circle
     for(let i = 0; i < resolution; i++){
         vertices.push(topRadius*Math.cos(degToRad(i*angle)), 0.5, -topRadius*Math.sin(degToRad(i*angle)));
+
+        normals.push(topRadius*Math.cos(degToRad(i*angle)), 0, -topRadius*Math.sin(degToRad(i*angle)));
     }
 
     //Push the triangles connecting the bottom vertices to the top vertices
@@ -302,28 +307,45 @@ function generateCylinderMesh(resolution, bottomRadius, topRadius){
         indices.push(i);
     }
 
+    //Repush edges for duplicated vertices for proper normals
+    
+    //Add the vertices lying on the edge of the bottom circle
+    for(let i = 0; i < resolution; i++){
+        vertices.push(bottomRadius*Math.cos(degToRad(i*angle)), -0.5, -bottomRadius*Math.sin(degToRad(i*angle)));
+
+        normals.push(0, -1, 0);
+    }
+    //Add the vertices lying on the edge of the top circle
+    for(let i = 0; i < resolution; i++){
+        vertices.push(topRadius*Math.cos(degToRad(i*angle)), 0.5, -topRadius*Math.sin(degToRad(i*angle)));
+
+        normals.push(0, 1, 0);
+    }
+
     //Push the vertex at the center of the bottom circle
     vertices.push(0.0, -0.5, 0.0);
+    normals.push(0, -1, 0);
     //Push the vertex at the center of the top circle
     vertices.push(0.0, 0.5, 0.0);
+    normals.push(0, 1, 0);
 
     //These values are DIRECTLY related to how the egdge vertices are pushed in the previous loops AND how the circle center vertices are pushed
     //Push the triangles connecting the bottom vertices to the bottom circle edge vertices (i.e. construct the bottom circle)
     for(let i = 0; i < resolution; i++){
-        indices.push(i);
-        indices.push(resolution*2);
-        indices.push((i+1)%resolution);
+        indices.push(resolution*2 + i);
+        indices.push(resolution*2 + resolution*2);
+        indices.push(resolution*2 + (i+1)%resolution);
     }
     //Push the triangles connecting the top vertices to the top circle edge vertices (i.e. construct the top circle)
     for(let i = 0; i < resolution; i++){
-        indices.push(i+resolution);
-        indices.push((i+1)%resolution+resolution);
-        indices.push(resolution*2+1);
+        indices.push(resolution*2 + i+resolution);
+        indices.push(resolution*2 + (i+1)%resolution+resolution);
+        indices.push(resolution*2 + resolution*2+1);
     }
 
     var cylinderMesh = new Mesh();
-    cylinderMesh.createNewBuffers(vertices, indices);
-    cylinderMesh.calculateNormals(vertices, indices);
+    cylinderMesh.createNewBuffersWithNormals(vertices, indices, normals);
+    //cylinderMesh.calculateNormals(vertices, indices);
     return cylinderMesh;
 }
 

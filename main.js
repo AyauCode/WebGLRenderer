@@ -95,23 +95,52 @@ function initScene() {
     cam = new Camera(new Transform(null), 60, 1.0, 0.1, 500);
 
     mainLightObject = new Sphere(new Transform(null), [1.0, 1.0, 1.0], defaultSphereMeshResolution, 0.5, unlitMat);
-    mainLightObject.getTransform().setLocalPosition([25,10,-25]);
+    mainLightObject.getTransform().setLocalPosition([30,7.5,-22]);
     mainLightObject.getTransform().setLocalScale([0.5,0.5,0.5]);
     //=======================================================
     
     //==============HIERARCHICAL=WORLD=OBJECT================
-    heirarchicalObject = new Sphere(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
-    heirarchicalObject.getTransform().setLocalPosition([25,0.5,-25]);
+    heirarchicalObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
+    heirarchicalObject.getTransform().setLocalPosition([25,1,-25]);
+    heirarchicalObject.getTransform().setLocalScale([1, 2, 1]);
 
-    cubeObject = new Cube(new Transform(null), [Math.random(), Math.random(), Math.random()]);
-    cubeObject.getTransform().setLocalPosition([20,0.5,-20]);
+    heirarchicalObjectSphere = new Sphere(new Transform(heirarchicalObject.getTransform()), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
+    heirarchicalObjectSphere.getTransform().setLocalPosition([0,0.75,0]);
+    heirarchicalObjectSphere.getTransform().setLocalScale([1.5,0.75,1.5]);
 
-    pyramidObject = new Pyramid(new Transform(null), [Math.random(), Math.random(), Math.random()]);
-    pyramidObject.getTransform().setLocalPosition([15,0.5,-15]);
+    heirarchicalObjectPyramid = new Pyramid(new Transform(heirarchicalObjectSphere.getTransform()), [Math.random(), Math.random(), Math.random()]);
+    heirarchicalObjectPyramid.getTransform().setLocalRotationFromEulerAngles([degToRad(90),0,0]);
+    heirarchicalObjectPyramid.getTransform().setLocalPosition([0,0,-0.5]);
+    heirarchicalObjectPyramid.getTransform().setLocalScale([0.5,0.5,0.5]);
+
+    heirarchicalObjectLeftCube = new Cube(new Transform(new Transform(heirarchicalObject.getTransform())), [Math.random(), Math.random(), Math.random()]);
+    heirarchicalObjectLeftCube.getTransform().setLocalPosition([-0.75,0.25,0]);
+    heirarchicalObjectLeftCube.getTransform().setLocalScale([0.8,0.15,0.25]);
+
+    heirarchicalObjectRightCube = new Cube(new Transform(new Transform(heirarchicalObject.getTransform())), [Math.random(), Math.random(), Math.random()]);
+    heirarchicalObjectRightCube.getTransform().setLocalPosition([0.75,0.25,0]);
+    heirarchicalObjectRightCube.getTransform().setLocalScale([0.8,0.15,0.25]);
+
+    topHat = new Cylinder(new Transform(heirarchicalObjectSphere.getTransform()), [0.35, 0.35, 0.35], defaultCylinderMeshResolution, 0.5, 0.5);
+    topHat.getTransform().setLocalPosition([0,0.8,0]);
+    topHat.getTransform().setLocalScale([0.8,0.8,0.8])
+    topHatBrim = new Cylinder(new Transform(topHat.getTransform()), [0.35, 0.35, 0.35], defaultCylinderMeshResolution, 0.5, 0.5);
+    topHatBrim.getTransform().setLocalPosition([0,-0.5,0]);
+    topHatBrim.getTransform().setLocalScale([1.5, 0.15, 1.5]);
+    //=======================================================
+
+    //===============PRIMITIVE=WORLD=OBJECTS=================
+    cubeObject = new Cube(new Transform(null), [0.25, 1, 0.25]);
+    cubeObject.getTransform().setLocalPosition([20,0.5,-15]);
 
     cylinderObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
-    cylinderObject.getTransform().setLocalPosition([20,0.5,-25]);
+    cylinderObject.getTransform().setLocalPosition([20,0.5,-20]);
 
+    sphereObject = new Sphere(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
+    sphereObject.getTransform().setLocalPosition([20,0.5,-25]);
+
+    pyramidObject = new Pyramid(new Transform(null), [Math.random(), Math.random(), Math.random()]);
+    pyramidObject.getTransform().setLocalPosition([20,0.5,-30]);
     //=======================================================
 
     //==============Ground=Plane=World=Object================
