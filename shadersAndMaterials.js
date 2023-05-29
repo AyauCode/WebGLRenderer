@@ -4,26 +4,49 @@
 //Copyright 2023, Ayau(AyauCode), All rights reserved.
 ///////////////////////////////////////////////////////
 
-//The phong shader program for all default world objects
+/**
+ * The phong shader program for all default world objects
+ */
 var phongShaderProgram;
-//The shader program for animated, transparent water
+/**
+ * The environment mapping shader program for objects that reflect the skybox
+ */
+var envMapShaderProgram;
+/**
+ * The shader program for animated, transparent water
+ */ 
 var waterShaderProgram;
-//The shader program for unlit objects
+/**
+ * The shader program for unlit objects
+ */
 var unlitShaderProgram;
-//The shader program for the quad with color gradient representing the sky
+/**
+ * The shader program for the quad with color gradient representing the sky
+ */
 var skyShaderProgram;
-//The default shader program to use
+/**
+ * The default shader program to use
+ */
 var defaultMaterial;
-
-//The order you add the materials to this list determines the render order
-//So transparent objects must always be last
+/**
+ * A list containing the Material objects to use in the scene
+ * NOTE: The order you add the materials to this list determines the render order, so transparent objects must always be last
+ */
 var materialList = [];
 
 var skyMat;
+var envMapMat;
 var phongMat;
 var unlitMat;
 var waterMat;
 
+var cubemapTexture;
+
+/**
+ * Swaps the material the program is currently using
+ * @param {*} material The material to swap to
+ * @returns True if the material exists in the materialObjectMap, otherwise False
+ */
 function swapToNewMaterial(material){
     currentMaterial.disableShader();
 
@@ -48,6 +71,7 @@ function initShadersAndMaterials(){
 function createAllMaterials(){
     currentMaterial = new Material(null, function(objectMesh){}, function(shader, objectToRender){}, function(shader, objectToRender){}, function(shader){},function(shader){});
 
+    //NOTE: Material objects are added to the materialList in the constructor of Material, so the order they are created here determines the order they are added to materialList
     //SKY MATERIAL
     skyMat = new Material(skyShaderProgram, 
         function(objectMesh){
@@ -72,12 +96,55 @@ function createAllMaterials(){
         }
     );
 
+    //ENVIRONMENT MAPPING MATERIAL
+    envMapMat = new Material(envMapShaderProgram,
+        function(objectMesh){
+            objectMesh.bindVertexBuffer();
+            objectMesh.bindIndexBuffer();
+            objectMesh.bindNormalBuffer();
+        },
+        function(shader, objectToRender) {
+            gl.uniformMatrix4fv(shader.camModelMatrixUniform, false, cam.getTransform().getWorldTransformationMatrix());
+
+            gl.uniformMatrix4fv(shader.vMatrixUniform, false, cam.getViewMatrix());
+            gl.uniformMatrix4fv(shader.pMatrixUniform, false, cam.getProjectionMatrix());
+
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemapTexture);
+            
+            gl.uniform1i(shader.skyboxUniform, 1);
+        },
+        function(shader, objectToRender){
+            var modelMatrix = objectToRender.getTransform().getWorldTransformationMatrix();
+            mat4.toInverseMat3(modelMatrix, workingMat3);
+            mat3.transpose(workingMat3);
+
+            gl.uniformMatrix3fv(shader.normalMatrixUniform, false, workingMat3);
+            gl.uniformMatrix4fv(shader.mMatrixUniform, false, modelMatrix);
+        },
+        function(shader){
+            gl.enable(gl.DEPTH_TEST);
+            gl.disable(gl.BLEND);
+
+            gl.enableVertexAttribArray(shader.vertexPositionAttribute);
+            gl.enableVertexAttribArray(shader.normalAttribute);
+        },
+        function(shader){
+            gl.disableVertexAttribArray(shader.vertexPositionAttribute);
+            gl.disableVertexAttribArray(shader.normalAttribute);
+            gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+        }
+    );
+
     //PHONG MATERIAL
     phongMat = new Material(phongShaderProgram,
         function(objectMesh){
             objectMesh.bindVertexBuffer();
             objectMesh.bindIndexBuffer();
             objectMesh.bindNormalBuffer();
+            if(objectMesh.getUVBuffer() != null){
+                objectMesh.bindUVBuffer();
+            }
         },
         function(shader, objectToRender) {
             gl.uniform1f(shader.ambientStrengthUniform, ambientLightStrength);
@@ -93,11 +160,22 @@ function createAllMaterials(){
             gl.uniformMatrix4fv(shader.pMatrixUniform, false, cam.getProjectionMatrix());
         },
         function(shader, objectToRender){
-            var modelMatrix = objectToRender.getTransform().getWorldTransformationMatrix();
-            mat4.toInverseMat3(modelMatrix, normalMatrix);
-            mat3.transpose(normalMatrix);
+            if(objectToRender.useTexture()){
+                gl.uniform1i(shader.useTextureUniform, 1);
 
-            gl.uniformMatrix3fv(shader.normalMatrixUniform, false, normalMatrix);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, objectToRender.getTexture());
+                
+                gl.uniform1i(shader.mainTexUniform, 0);
+            }else{
+                gl.uniform1i(shader.useTextureUniform, 0);
+            }
+
+            var modelMatrix = objectToRender.getTransform().getWorldTransformationMatrix();
+            mat4.toInverseMat3(modelMatrix, workingMat3);
+            mat3.transpose(workingMat3);
+
+            gl.uniformMatrix3fv(shader.normalMatrixUniform, false, workingMat3);
             gl.uniformMatrix4fv(shader.mMatrixUniform, false, modelMatrix);
             gl.uniform3fv(shader.colorUniform, objectToRender.getColor());
         },
@@ -119,12 +197,26 @@ function createAllMaterials(){
         function(objectMesh){
             objectMesh.bindVertexBuffer();
             objectMesh.bindIndexBuffer();
+            if(objectMesh.getUVBuffer() != null){
+                objectMesh.bindUVBuffer();
+            }
         },
         function(shader, objectToRender){
             gl.uniformMatrix4fv(shader.vMatrixUniform, false, cam.getViewMatrix());
             gl.uniformMatrix4fv(shader.pMatrixUniform, false, cam.getProjectionMatrix());
         },
         function(shader, objectToRender){
+            if(objectToRender.useTexture()){
+                gl.uniform1i(shader.useTextureUniform, 1);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, objectToRender.getTexture());
+                
+                gl.uniform1i(shader.mainTexUniform, 0);
+            }else{
+                gl.uniform1i(shader.useTextureUniform, 0);
+            }
+
             gl.uniformMatrix4fv(shader.mMatrixUniform, false, objectToRender.getTransform().getWorldTransformationMatrix());
             gl.uniform3fv(shader.colorUniform, objectToRender.getColor());
         },
@@ -173,8 +265,9 @@ function createAllShaders(){
     waterShaderProgram = initShader("water-shader-vs", "water-shader-fs")
     unlitShaderProgram = initShader("unlit-shader-vs", "unlit-shader-fs");
     skyShaderProgram = initShader("sky-shader-vs", "sky-shader-fs");
+    envMapShaderProgram = initShader("env-map-shader-vs", "env-map-shader-fs");
 
-    //================SKY=SHADER=VARIABLES===================
+    //============GRADIENT=SKY=SHADER=VARIABLES==============
     skyShaderProgram.vertexPositionAttribute = gl.getAttribLocation(skyShaderProgram, "aVertexPosition");
     gl.enableVertexAttribArray(skyShaderProgram.vertexPositionAttribute);
     skyShaderProgram.vMatrixUniform = gl.getUniformLocation(skyShaderProgram, "uVMatrix");
@@ -183,20 +276,37 @@ function createAllShaders(){
     skyShaderProgram.skyColorOffset = gl.getUniformLocation(skyShaderProgram, "offset");
     //=======================================================
 
+    //==============ENV=MAP=SHADER=VARIABLES=================
+    envMapShaderProgram.vertexPositionAttribute = gl.getAttribLocation(envMapShaderProgram, "aVertexPosition");
+    envMapShaderProgram.normalAttribute = gl.getAttribLocation(envMapShaderProgram, "aNormal");
+
+    envMapShaderProgram.mMatrixUniform = gl.getUniformLocation(envMapShaderProgram, "uMMatrix");
+    envMapShaderProgram.vMatrixUniform = gl.getUniformLocation(envMapShaderProgram, "uVMatrix");
+    envMapShaderProgram.pMatrixUniform = gl.getUniformLocation(envMapShaderProgram, "uPMatrix");
+    
+    envMapShaderProgram.camModelMatrixUniform = gl.getUniformLocation(envMapShaderProgram, "uCamModelMatrix");
+    envMapShaderProgram.normalMatrixUniform = gl.getUniformLocation(envMapShaderProgram, "uNormalMatrix");
+
+    envMapShaderProgram.skyboxUniform = gl.getUniformLocation(envMapShaderProgram, "uSkybox");
+    //=======================================================
+
     //===============UNLIT=SHADER=VARIABLES==================
     unlitShaderProgram.vertexPositionAttribute = gl.getAttribLocation(unlitShaderProgram, "aVertexPosition");
-    //gl.enableVertexAttribArray(unlitShaderProgram.vertexPositionAttribute);
+    unlitShaderProgram.texCoordAttribute = gl.getAttribLocation(unlitShaderProgram, "aTexCoord");
+
     unlitShaderProgram.colorUniform = gl.getUniformLocation(unlitShaderProgram, "uColor");
     unlitShaderProgram.mMatrixUniform = gl.getUniformLocation(unlitShaderProgram, "uMMatrix");
     unlitShaderProgram.vMatrixUniform = gl.getUniformLocation(unlitShaderProgram, "uVMatrix");
     unlitShaderProgram.pMatrixUniform = gl.getUniformLocation(unlitShaderProgram, "uPMatrix");
+
+    unlitShaderProgram.useTextureUniform = gl.getUniformLocation(unlitShaderProgram, "useTexture");
+    unlitShaderProgram.mainTexUniform = gl.getUniformLocation(unlitShaderProgram, "uMainTex");
     //=======================================================
 
     //==============DEFAULT=SHADER=VARIABLES=================
     phongShaderProgram.vertexPositionAttribute = gl.getAttribLocation(phongShaderProgram, "aVertexPosition");
-    //gl.enableVertexAttribArray(phongShaderProgram.vertexPositionAttribute);
     phongShaderProgram.normalAttribute = gl.getAttribLocation(phongShaderProgram, "aNormal");
-    //gl.enableVertexAttribArray(phongShaderProgram.normalAttribute);
+    phongShaderProgram.texCoordAttribute = gl.getAttribLocation(phongShaderProgram, "aTexCoord");
 
     phongShaderProgram.colorUniform = gl.getUniformLocation(phongShaderProgram, "uColor");
     phongShaderProgram.ambientStrengthUniform = gl.getUniformLocation(phongShaderProgram, "uAmbientStrength");
@@ -212,6 +322,9 @@ function createAllShaders(){
     phongShaderProgram.mMatrixUniform = gl.getUniformLocation(phongShaderProgram, "uMMatrix");
     phongShaderProgram.vMatrixUniform = gl.getUniformLocation(phongShaderProgram, "uVMatrix");
     phongShaderProgram.pMatrixUniform = gl.getUniformLocation(phongShaderProgram, "uPMatrix");
+
+    phongShaderProgram.useTextureUniform = gl.getUniformLocation(phongShaderProgram, "useTexture");
+    phongShaderProgram.mainTexUniform = gl.getUniformLocation(phongShaderProgram, "uMainTex");
     //=======================================================
     
     //===============WATER=SHADER=VARIABLES==================

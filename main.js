@@ -4,11 +4,18 @@
 //Copyright 2023, Ayau(AyauCode), All rights reserved.
 ///////////////////////////////////////////////////////
 
-//The OpenGL Context
+/**
+ * The OpenGL Context
+ */
 var gl;
-//The canvas element being drawn to
+/**
+ * The canvas element being drawn to
+ */
 var canvas;
 
+/**
+ * The current material object being used to render objects
+ */
 var currentMaterial;
 
 //////////// Init OpenGL Context etc. ///////////////
@@ -25,20 +32,40 @@ function initGL(canvas) {
     }
 }
 
-function createGameObjectFromJSON(filename, modelTransform, modelColor){
+/**
+ * Loads the given JSON model file and creates a worldObject in the scene with the given transform, color, and texture
+ * @param {*} filename The filepath of the JSON model
+ * @param {*} modelTransform The Transform object to create the worldObject with
+ * @param {*} modelColor A length 3 array representing color [r,g,b]
+ * @param {*} texture An Image object containing the texture to create the worldObject with
+ */
+function createGameObjectFromJSON(filename, modelTransform, modelColor, texture = null){
     let request = new XMLHttpRequest();
     request.open("GET", filename);
 
     request.onreadystatechange = function (){
         if(request.readyState == 4){
-            loadJSON(JSON.parse(request.responseText), modelTransform, modelColor);
+            loadJSON(JSON.parse(request.responseText), modelTransform, modelColor, texture);
         }
     }
     request.send();
 }
-function loadJSON(modelData, modelTransform, modelColor){
+/**
+ * Obtains the vertices, indices, and UVs of the given model and creates a new worldObject with those properties.
+ * @param {*} modelData The JSON object of the model
+ * @param {*} modelTransform The Transform object to create the worldObject with
+ * @param {*} modelColor A length 3 array representing color [r,g,b]
+ * @param {*} texture An Image object containing the texture to create the worldObject with
+ * @returns The new worldObject
+ */
+function loadJSON(modelData, modelTransform, modelColor, texture){
     var vertices = modelData.vertices;
     var faces = modelData.faces;
+    var uvs = null;
+    if(texture != null){
+        uvs = modelData.uvs[0]
+    }
+    
     var indices = [];
     //NOTE: Every model I looked at from: https://rigmodels.com/index.php has their JSON format made for Three.Javascript
     //This is fine for the vertices, HOWEVER the JSON format for Three.js uses faces, which, if it was like .obj, would be fine as there is plenty of documentation about the .obj format.
@@ -55,8 +82,76 @@ function loadJSON(modelData, modelTransform, modelColor){
     var mesh = new Mesh();
     mesh.createNewBuffers(vertices, indices);
     mesh.calculateNormals(vertices, indices);
-    var modelObject = new WorldObject(mesh, modelTransform, modelColor);
+    if(uvs != null){
+        mesh.createUVBuffer(uvs);
+    }
+    var modelObject = new WorldObject(mesh, modelTransform, modelColor, phongMat, (texture != null), texture);
     return modelObject;
+}
+
+/**
+ * Creates a new Image object containing the texture at the given path
+ * @param {*} imageSrc The path file of the texture
+ * @returns The new Image object
+ */
+function loadTexture(imageSrc){
+    var newTex = gl.createTexture();
+    newTex.image = new Image();
+    newTex.image.onload = function() { handleTextureLoaded(newTex); }
+    newTex.image.src = imageSrc;
+    return newTex;
+}
+
+/**
+ * Sets the WebGL parameters of the texture
+ * @param {*} texture The texture to set the properties of
+ */
+function handleTextureLoaded(texture){
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+var cubemapCounter, cubemapImages;
+/**
+ * An array of all filepaths of the skybox textures
+ */
+const cubemapImageSources = ["images/skybox/right.jpg","images/skybox/left.jpg","images/skybox/bottom.jpg","images/skybox/top.jpg","images/skybox/front.jpg","images/skybox/back.jpg"]
+/**
+ * Creates a cubemap texture using the textures contained in the submapImageSources array
+ */
+function handleCubemapFaceLoaded(){
+    if(++cubemapCounter < 6){
+        return;
+    }
+    cubemapTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemapTexture);
+    for(let i = 0; i < 6; i++){
+        gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cubemapImages[i]);
+    }
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+}
+
+function loadCubemap(){
+    cubemapCounter = 0;
+    cubemapImages = [];
+    for(let i = 0; i < 6; i++){
+        cubemapImages[i] = new Image();
+        cubemapImages[i].onload = handleCubemapFaceLoaded;
+        cubemapImages[i].src = cubemapImageSources[i];
+    }
 }
 
 ///////////////////////////////////////////////////////////////
@@ -70,19 +165,21 @@ var lastPointerLockElement;
 
 var cam;
 
-var normalMatrix;
-
 var mainLightObject;
 
+var sceneParent;
 var heirarchicalObject;
 var groundPlaneObject, terrainObject, waterObject;
+var sphereObject;
+var reflectiveCubeObject, reflectiveSphereObject, cubeMapParent;
 var skyQuad;
+
+var sphereObjectStartPos;
 
 var keyStates = {};
 
 //===========================================================
 function initScene() {
-    normalMatrix = mat3.create();
     //Initialize noise with random seed (Math.random() returns value between [0,1) but gets scaled by 65536 in perlin.js)
     noise.seed(Math.random());
 
@@ -91,16 +188,17 @@ function initScene() {
     //=======================================================
     skyQuad = new WorldObject(screenSizeQuadMesh, new Transform(null), [1.0,0.0,0.0], skyMat);
 
+    sceneParent = new WorldObject(null, new Transform(null), [0,0,0]);
     //===============Camera/Lighting=Objects=================
-    cam = new Camera(new Transform(null), 60, 1.0, 0.1, 500);
+    cam = new Camera(new Transform(null), 60, 1.0, 0.1, 1000);
 
-    mainLightObject = new Sphere(new Transform(null), [1.0, 1.0, 1.0], defaultSphereMeshResolution, 0.5, unlitMat);
-    mainLightObject.getTransform().setLocalPosition([30,7.5,-22]);
+    mainLightObject = new Sphere(new Transform(sceneParent.getTransform()), [1.0, 1.0, 1.0], defaultSphereMeshResolution, 0.5, unlitMat);
+    mainLightObject.getTransform().setLocalPosition([20,7.5,-15]);
     mainLightObject.getTransform().setLocalScale([0.5,0.5,0.5]);
     //=======================================================
     
     //==============HIERARCHICAL=WORLD=OBJECT================
-    heirarchicalObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
+    heirarchicalObject = new Cylinder(new Transform(sceneParent.getTransform()), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
     heirarchicalObject.getTransform().setLocalPosition([25,1,-25]);
     heirarchicalObject.getTransform().setLocalScale([1, 2, 1]);
 
@@ -130,29 +228,78 @@ function initScene() {
     //=======================================================
 
     //===============PRIMITIVE=WORLD=OBJECTS=================
-    cubeObject = new Cube(new Transform(null), [0.25, 1, 0.25]);
+    cubeObject = new Cube(new Transform(sceneParent.getTransform()), [0.25, 1, 0.25]);
     cubeObject.getTransform().setLocalPosition([20,0.5,-15]);
 
-    cylinderObject = new Cylinder(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
+    cylinderObject = new Cylinder(new Transform(sceneParent.getTransform()), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
     cylinderObject.getTransform().setLocalPosition([20,0.5,-20]);
 
-    sphereObject = new Sphere(new Transform(null), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
-    sphereObject.getTransform().setLocalPosition([20,0.5,-25]);
+    sphereObject = new Sphere(new Transform(sceneParent.getTransform()), [Math.random(), Math.random(), Math.random()], defaultSphereMeshResolution, 0.5);
+    sphereObjectStartPos = [20,0.5,-25];
+    sphereObject.getTransform().setLocalPosition(sphereObjectStartPos);
 
-    pyramidObject = new Pyramid(new Transform(null), [Math.random(), Math.random(), Math.random()]);
+    pyramidObject = new Pyramid(new Transform(sceneParent.getTransform()), [Math.random(), Math.random(), Math.random()]);
     pyramidObject.getTransform().setLocalPosition([20,0.5,-30]);
+
+    zeroCylinder = new Cylinder(new Transform(sceneParent.getTransform()), [Math.random(), Math.random(), Math.random()], defaultCylinderMeshResolution, 0.5, 0.5);
+    zeroCylinder.getTransform().setLocalScale([0.5,5.0,0.5]);
+    //=======================================================
+
+    //====================CUBE=MAP=WALLS=====================
+    cubeMapParent = new WorldObject(null, new Transform(null), [0,0,0]);
+    cubeMapParent.getTransform().setLocalPosition([25,0,-25]);
+    cubeMapParent.getTransform().setLocalScale([750,750,750]);
+
+    var cubeMapBrightness = 1.15;
+    var cubeMapColor = [cubeMapBrightness, cubeMapBrightness, cubeMapBrightness];
+    frontWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/front.jpg"))
+    frontWall.getTransform().setLocalPosition([0,0,-0.5]);
+    frontWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+
+    backWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/back.jpg"))
+    backWall.getTransform().setLocalPosition([0,0,0.5]);
+    backWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+    backWall.getTransform().setLocalRotationFromEulerAngles([0, degToRad(180), 0]);
+
+    leftWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/left.jpg"))
+    leftWall.getTransform().setLocalPosition([-0.5,0,0]);
+    leftWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+    leftWall.getTransform().setLocalRotationFromEulerAngles([0, degToRad(-90), 0]);
+
+    rightWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/right.jpg"))
+    rightWall.getTransform().setLocalPosition([0.5,0,0]);
+    rightWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+    rightWall.getTransform().setLocalRotationFromEulerAngles([0, degToRad(90), 0]);
+
+    upWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/top.jpg"))
+    upWall.getTransform().setLocalPosition([0,0.5,0]);
+    upWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+    upWall.getTransform().setLocalRotationFromEulerAngles([degToRad(-90), 0, 0]);
+
+    downWall = new WorldObject(quadMesh, new Transform(cubeMapParent.getTransform()), cubeMapColor, unlitMat, true, loadTexture("images/skybox/bottom.jpg"))
+    downWall.getTransform().setLocalPosition([0,-0.5,0]);
+    downWall.getTransform().setLocalScale([1.002,1.002,1.0]);
+    downWall.getTransform().setLocalRotationFromEulerAngles([degToRad(90), 0, 0]);
+    //=======================================================
+
+    //==================Reflective=Sphere====================
+    reflectiveSphereObject = new Sphere(new Transform(sceneParent.getTransform()), [1.0, 1.0, 1.0], defaultSphereMeshResolution, 0.5, envMapMat);
+    reflectiveSphereObject.getTransform().setLocalPosition([28,5,-10]);
+
+    reflectiveCubeObject = new Cube(new Transform(sceneParent.getTransform()), [1.0, 1.0, 1.0], envMapMat);
+    reflectiveCubeObject.getTransform().setLocalPosition([23,5.0,-12]);
     //=======================================================
 
     //==============Ground=Plane=World=Object================
-    groundPlaneObject = new WorldObject(generatePlaneMesh([50,50],80), new Transform(null), [Math.random(),Math.random(),Math.random()]);
+    groundPlaneObject = new WorldObject(generatePlaneMesh([50,50],80), new Transform(sceneParent.getTransform()), [Math.random(),Math.random(),Math.random()]);
     //=======================================================
 
     //=============Simplex=Terrain=World=Object==============
-    terrainObject = new WorldObject(generateNoiseMesh([50,50], 80), new Transform(null), [Math.random(),Math.random(),Math.random()]);
+    terrainObject = new WorldObject(generateNoiseMesh([50,50], 80), new Transform(sceneParent.getTransform()), [Math.random(),Math.random(),Math.random()]);
     //=======================================================
 
     //==============Water=Mesh=World=Object==================
-    waterObject = new WorldObject(generatePlaneMesh([50,50], 80), new Transform(null), [0.0,0.0,1.0], waterMat);
+    waterObject = new WorldObject(generatePlaneMesh([50,50], 80), new Transform(sceneParent.getTransform()), [0.0,0.0,1.0], waterMat);
     //=======================================================
 
     cam.lookAt(camStartPos,heirarchicalObject.getTransform().getLocalPosition(),[0,1,0]);
@@ -164,6 +311,7 @@ function mainProgramLoop(now) {
         requestAnimationFrame(mainProgramLoop);
         return;
     }
+
     //=================Time=Calculation======================
     //Calculate current time(now) and convert to seconds
     now *= 0.001;
@@ -196,6 +344,8 @@ function mainProgramLoop(now) {
         cam.lookAt(cam.getTransform().getLocalPosition(), heirarchicalObject.getTransform().getLocalPosition(), [0,1,0]);
     }
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    animateObjects();
 
     //This loop might be bad, but I think it optimizes rendering
     //Each shader is used to create a material, objects are sorted in the map by their material.
@@ -234,9 +384,21 @@ function mainProgramLoop(now) {
                     if(!drawGradientSky && worldObjectList[i] == skyQuad){
                         continue;
                     }
+                    if(!drawSkyBox && worldObjectList[i].getTransform().getParent() == cubeMapParent.getTransform()){
+                        continue;
+                    }
 
                     currentMaterial.bindShaderObject(worldObjectList[i]);
                     key.draw();
+
+                    //If this world object is using a texture unbind it
+                    if(worldObjectList[i].useTexture()){
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                    }
+                }
+                //If this mesh had a UV buffer disable it
+                if(key.getUVBuffer() != null){
+                    gl.disableVertexAttribArray(currentMaterial.getShader().texCoordAttribute);
                 }
             }
         }
@@ -248,9 +410,32 @@ function mainProgramLoop(now) {
 
     requestAnimationFrame(mainProgramLoop);
 }
+/**
+ * Animates the default sphere, reflective sphere, and reflective cube objects in the scene.
+ * @DefaultSphere moves in the x and z axes over time following cos and sin respectively.
+ * @ReflectiveSphere moves in along the y-axis bobbing up and down over time.
+ * @ReflectiveCube rotates along its local x-axis over time.
+ */
+function animateObjects(){
+    if(rotateSceneGlobally){
+        sceneParent.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(sceneParent.getTransform().getWorldUp(), degToRad(deltaTime*globalRotateSpeed)));
+    }
+
+    sphereObject.getTransform().setLocalPosition([Math.cos(currentTime*2) + sphereObjectStartPos[0], sphereObjectStartPos[1], Math.sin(currentTime*2) + sphereObjectStartPos[2]]);
+
+    var currentSpherePos = reflectiveSphereObject.getTransform().getLocalPosition();
+    reflectiveSphereObject.getTransform().setLocalPosition([currentSpherePos[0], Math.sin(currentTime) + 4.0, currentSpherePos[2]]);
+
+    reflectiveCubeObject.getTransform().applyRotationToLocalRotation(quat4.createFromAngleAxis(reflectiveCubeObject.getTransform().getLocalRight(), degToRad(-deltaTime*rotateSpeed)));
+}
+
 var fps = 0;
 var lastUpdate = 0;
 var frameCount = 0;
+/**
+ * Calculates the current FPS and sets the HTML FPS text element.
+ * @param {*} now The current time in seconds
+ */
 function updateFPS(now){
     frameCount++;
     if (now - lastUpdate > 1.0)
@@ -266,6 +451,9 @@ function updateFPS(now){
 var newPos = vec3.create();
 var dir = vec3.create();
 var moveSpeed = 5;
+/**
+ * Move the light object, and camera (based on camera movement type) depending on the key pressed
+ */
 function handleKeyPress(){
     if(freeCam){
         freeCamMovement();
@@ -275,6 +463,9 @@ function handleKeyPress(){
     }
     lightObjectMovement();
 }
+/**
+ * Move the light object based on the key pressed
+ */
 function lightObjectMovement(){
     if(keyStates["arrowup"]){
         mainLightObject.getTransform().addVec3ToLocalPosition([0,0,-deltaTime * moveSpeed]);
@@ -288,15 +479,18 @@ function lightObjectMovement(){
     if(keyStates["arrowright"]){
         mainLightObject.getTransform().addVec3ToLocalPosition([deltaTime * moveSpeed,0,0]);
     }
-    if(keyStates["pageup"]){
+    if(keyStates["m"]){
         mainLightObject.getTransform().addVec3ToLocalPosition([0,deltaTime * moveSpeed,0]);
     }
-    if(keyStates["pagedown"]){
+    if(keyStates["n"]){
         mainLightObject.getTransform().addVec3ToLocalPosition([0,-deltaTime * moveSpeed,0]);
     }
 }
 var pitch = 0,yaw = 0,roll = 0;
 var rotateSpeed = 20;
+/**
+ * Moves the camera using pitch, yaw, and roll controls
+ */
 function aircraftCameraRotation(){
     if(keyStates["p"]){
         if(keyStates["shift"]){
@@ -321,6 +515,9 @@ function aircraftCameraRotation(){
         }
     }
 }
+/**
+ * Move the camera in the x and z axes based on the keys pressed
+ */
 function heirarchicalObjectMovement(){
     //FORWARD
     if(keyStates["w"]){
@@ -343,7 +540,9 @@ function heirarchicalObjectMovement(){
         heirarchicalObject.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*heirarchicalObjectRight[0], moveSpeed*deltaTime*heirarchicalObjectRight[1], moveSpeed*deltaTime*heirarchicalObjectRight[2]]);
     }
 }
-
+/**
+ * Move the camera relative to the current view direction based on the keys pressed.
+ */
 function freeCamMovement(){
     //FORWARD
     if(keyStates["w"]){
@@ -367,13 +566,11 @@ function freeCamMovement(){
     }
     //UP
     if(keyStates["e"]){
-        var camUp = cam.getTransform().getWorldUp();
-        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camUp[0], moveSpeed*deltaTime*camUp[1], moveSpeed*deltaTime*camUp[2]]);
+        cam.getTransform().addVec3ToLocalPosition([0.0, moveSpeed*deltaTime, 0.0]);
     }
     //DOWN
     if(keyStates["q"]){
-        var camDown = vec3.negate(cam.getTransform().getWorldUp());
-        cam.getTransform().addVec3ToLocalPosition([moveSpeed*deltaTime*camDown[0], moveSpeed*deltaTime*camDown[1], moveSpeed*deltaTime*camDown[2]]);
+        cam.getTransform().addVec3ToLocalPosition([0, -moveSpeed*deltaTime, 0]);
     }
     //ESCAPE
     //"esc" added for redundancy as allegedly older versions of Mozilla register the Escape key as "esc" instead of "escape"
@@ -391,13 +588,15 @@ function freeCamMovement(){
     }
 }
 
-
 ///////////////////////////////////////////////////////////////
 
 var lastMouseX = -1, lastMouseY = -1;
 var mouseSens = 25;
 
 ///////////////////////////////////////////////////////////////
+/**
+ * Calculate change in mouse position since last frame and rotates camera accordingly
+ */
 function onCanvasMouseMove(event) {
     var target = event.target;
     if(target != canvas || !freeCam){
@@ -451,9 +650,13 @@ function webGLStart() {
     //if they are not put in the correct order the triangle will render in the wrong direction)
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
     gl.clearColor(backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0);
+
+    loadCubemap();
     //=======================================================
 
     //=================MOUSE/KEY=EVENTS======================
@@ -464,18 +667,24 @@ function webGLStart() {
     document.addEventListener('keyup', onDocumentKeyUp, false);
     //=======================================================
 
-
-    var houseTransform = new Transform(null);
+    //===================IMPORT=MODELS=======================
+    var houseTransform = new Transform(sceneParent.getTransform());
     houseTransform.setLocalPosition([40,4.75,-40]);
     houseTransform.setLocalScale([5,5,5]);
     houseTransform.setLocalRotationFromEulerAngles([0,degToRad(-90),0]);
     createGameObjectFromJSON("models/house.json", houseTransform, [1.0,1.0,1.0]);
 
-    var carTransform = new Transform(null);
+    var carTransform = new Transform(sceneParent.getTransform());
     carTransform.setLocalPosition([35,0.8,-32]);
     carTransform.setLocalScale([2,2,2]);
     carTransform.setLocalRotationFromEulerAngles([0,degToRad(235),0]);
     createGameObjectFromJSON("models/car.json", carTransform, [1.0,1.0,1.0]);
+
+    var barrelTransform = new Transform(sceneParent.getTransform());
+    barrelTransform.setLocalPosition([28,1.25,-10]);
+    barrelTransform.setLocalRotationFromEulerAngles([0,degToRad(75),0]);
+    createGameObjectFromJSON("models/barrel.json", barrelTransform, [1.0,1.0,1.0], loadTexture("images/oil_barrel.png"));
+    //=======================================================
 }
 var testModel;
 async function requestCanvasPointerLock(event){

@@ -4,11 +4,22 @@
 //Copyright 2023, Ayau(AyauCode), All rights reserved.
 ///////////////////////////////////////////////////////
 
+/**
+ * A Map where each key is a mesh and each value is a list of objects to draw with that mesh
+ */
 var currentWorldObjectMap;
-var unitCubeMesh, unitCylinderMesh, unitSphereUpFaceMesh, unitPyramidMesh, screenSizeQuadMesh;
+
+var unitCubeMesh, unitCylinderMesh, unitSphereUpFaceMesh, unitPyramidMesh, screenSizeQuadMesh, quadMesh;
 const defaultSphereMeshResolution = 20, defaultCylinderMeshResolution = 20;
+
+/**
+ * A map where each key is a material and each value is a list of objects using that material
+ */
 var materialObjectMap = new Map();
 
+/**
+ * Initialize primitive meshes that may be frequently used. This includes: screen space quad, world space quad, cube, cylinder, sphere, and pyramid meshes.
+ */
 function initMeshPrimitives(){
 
     //================Screen=Size=Quad=Mesh==================
@@ -18,13 +29,34 @@ function initMeshPrimitives(){
         1.0, 1.0, 0.0,
         1.0, -1.0, 0.0,
     ];
+    var quadVerticesHalf = [
+        -0.5, 0.5, 0.0,
+        -0.5, -0.5, 0.0,
+        0.5, 0.5, 0.0,
+        0.5, -0.5, 0.0,
+    ];
+
+    var quadNormals = [
+        0.0, 0.0, 1.0,
+        0.0, 0.0, 1.0,
+        0.0, 0.0, 1.0,
+        0.0, 0.0, 1.0
+    ];
 
     var quadIndices = [
         0,1,2, 2,1,3
     ];
 
+    var quadUV = [
+        0.0,1.0, 0.0,0.0, 1.0,1.0, 1.0,0.0
+    ];
+
     screenSizeQuadMesh = new Mesh();
     screenSizeQuadMesh.createNewBuffers(quadVertices, quadIndices);
+
+    quadMesh = new Mesh();
+    quadMesh.createNewBuffers(quadVerticesHalf, quadIndices, quadNormals);
+    quadMesh.createUVBuffer(quadUV);
     //=======================================================
 
     //==================Unit=Cube=Mesh=======================
@@ -84,7 +116,7 @@ function initMeshPrimitives(){
     var cubeIndices = [0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10, 8,10,11, 12,13,14, 12,14,15, 16,17,18, 16,18,19, 20,21,22, 20,22,23];
 
     unitCubeMesh = new Mesh();
-    unitCubeMesh.createNewBuffersWithNormals(cubeVertices, cubeIndices, cubeNormals);
+    unitCubeMesh.createNewBuffers(cubeVertices, cubeIndices, cubeNormals);
 
     //=======================================================
 
@@ -124,6 +156,10 @@ function initMeshPrimitives(){
     unitPyramidMesh.calculateNormals(pyramidVertices, pyramidIndices);
     //=======================================================
 }
+/**
+ * Adds a worldObject to the worldObject list corresponding to the material of the mesh and the mesh itself
+ * @param {*} worldObject The worldObject to add to the scene
+ */
 function addObject(worldObject){
     if(materialObjectMap.has(worldObject.getMesh().getMaterial()))
     {
@@ -147,6 +183,14 @@ function addObject(worldObject){
     }
 }
 class Material{
+    /**
+     * @param {*} shader -The shader to use when rendering an object that has this material
+     * @param {*} bindMeshShaderFunc -A function thats called once for each mesh before all entities with this material and mesh are rendered
+     * @param {*} applyShaderFuncOneOff -A function that only needs to be called one time before all entities with this material and mesh are rendered
+     * @param {*} applyShaderFunc -A function thats called for each entity with this mesh and material
+     * @param {*} enableShaderFunc -A function that enables the shader for this material
+     * @param {*} disableShaderFunc -A function that disables the shader for this material
+     */
     constructor(shader, bindMeshShaderFunc, applyShaderFuncOneOff, applyShaderFunc, enableShaderFunc, disableShaderFunc){
         this.shader = shader;
         this.bindMeshShaderFunc = bindMeshShaderFunc;
@@ -191,45 +235,41 @@ class Transform{
         this.worldMat = mat4.create();
         this.localTransformationMatrix = mat4.create();
 
-        this.workingVec3 = vec3.create();
-        this.workingMatrix = mat4.create();
         this.workingQuaternion = quat4.create();
     }
     getWorldForward(){
-        mat4.toRotationMat(this.getWorldTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [0,0,-1], this.workingVec3);
+        mat4.toRotationMat(this.getWorldTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [0,0,-1], workingVec3);
     }
     getWorldRight(){
-        mat4.toRotationMat(this.getWorldTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [1,0,0], this.workingVec3);
+        mat4.toRotationMat(this.getWorldTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [1,0,0], workingVec3);
     }
     getWorldUp(){
-        mat4.toRotationMat(this.getWorldTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [0,1,0], this.workingVec3);
+        mat4.toRotationMat(this.getWorldTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [0,1,0], workingVec3);
     }
 
     getLocalForward(){
-        mat4.toRotationMat(this.getLocalTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [0,0,-1], this.workingVec3);
+        mat4.toRotationMat(this.getLocalTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [0,0,-1], workingVec3);
     }
     getLocalRight(){
-        mat4.toRotationMat(this.getLocalTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [1,0,0], this.workingVec3);
+        mat4.toRotationMat(this.getLocalTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [1,0,0], workingVec3);
     }
     getLocalUp(){
-        mat4.toRotationMat(this.getLocalTransformationMatrix(), this.workingMatrix);
-        return mat4.multiplyVec3(this.workingMatrix, [0,1,0], this.workingVec3);
+        mat4.toRotationMat(this.getLocalTransformationMatrix(), workingMat4);
+        return mat4.multiplyVec3(workingMat4, [0,1,0], workingVec3);
     }
     getLocalTransformationMatrix(){
         this.localTransformationMatrix = mat4.identity(this.localTransformationMatrix);
-
         mat4.translate(this.localTransformationMatrix, this.localPosition);
 
-        quat4.toMat4(this.localRotation, this.workingMatrix);
-        mat4.multiply(this.localTransformationMatrix, this.workingMatrix, this.localTransformationMatrix);
+        quat4.toMat4(this.localRotation, workingMat4);
+        mat4.multiply(this.localTransformationMatrix, workingMat4, this.localTransformationMatrix);
 
         mat4.scale(this.localTransformationMatrix, this.localScale);
-
         return this.localTransformationMatrix;
     }
     getWorldTransformationMatrix(){
@@ -239,6 +279,10 @@ class Transform{
         return mat4.multiply(this.parent.getWorldTransformationMatrix(), this.getLocalTransformationMatrix(), this.worldMat);
     }
 
+    /**
+     * Sets the local position of this transform
+     * @param {*} v A length 3 array containing the new local position
+     */
     setLocalPosition(v){
         this.localPosition = vec3.set(v, this.localPosition);
     }
@@ -251,26 +295,47 @@ class Transform{
     setLocalPositionZ(z){
         this.localPosition[2] = z;
     }
+    /**
+     * Adds the given vec3 to the local position of this transform
+     * @param {*} v A length 3 array to add to this transforms local position
+     */
     addVec3ToLocalPosition(v){
         this.localPosition[0] += v[0];
         this.localPosition[1] += v[1];
         this.localPosition[2] += v[2];
     }
-
+    /**
+     * Sets the local rotation of this transform
+     * @param {*} q A quaternion representing the new rotation
+     */
     setLocalRotation(q){
         this.localRotation = q;
     }
+    /**
+     * Sets the local rotation of this transform to the euler angles given. NOTE: ANGLES MUST BE GIVEN IN RADIANS
+     * @param {*} r A length 3 array of angles IN RADIANS to set this transforms rotation to
+     */
     setLocalRotationFromEulerAngles(r){
         this.localRotation = quat4.euler(this.localRotation, r);
     }
+    /**
+     * Applies the given rotation to this transforms rotation
+     * @param {*} q A quaternion representing the rotation to apply
+     */
     applyRotationToLocalRotation(q){
         this.localRotation = quat4.multiply(this.localRotation, q, this.workingQuaternion);
     }
+    /**
+     * Applies a rotation to this transforms rotation by the euler angles given. NOTE: ANGLES MUST BE GIVEN IN RADIANS
+     * @param {*} r A length 3 array of angles IN RADIANS to apply to this transforms rotation to
+     */
     applyEulerAnglesToLocalRotation(r){
-        this.workingQuaternion = quat4.euler(this.workingQuaternion, r);
-        this.localRotation = quat4.multiply(this.localRotation, this.workingQuaternion);
+        this.localRotation = quat4.multiply(this.localRotation, quat4.euler(this.workingQuaternion, r));
     }
-
+    /**
+     * Sets the local scale of this transform
+     * @param {*} s A length 3 array of new scale values for the Transform
+     */
     setLocalScale(s){
         this.localScale = vec3.set(s, this.localScale);
     }
@@ -305,12 +370,18 @@ class Transform{
         }
         this.children.push(child);
     }
+    /**
+     * @param {*} child The child Transform object to remove
+     */
     removeChild(child){
         var index = this.children.indexOf(child);
         if(index > -1){
             this.children.splice(index, 1);
         }
     }
+    /**
+     * @param {*} parent The Transform object to set as this Transforms parent
+     */
     setParent(parent){
         if(this.parent != null){
             this.parent.removeChild(this);
@@ -325,6 +396,7 @@ class Mesh{
         this.vertexBuffer = null;
         this.indexBuffer = null;
         this.normalBuffer = null;
+        this.uvBuffer = null;
         this.material = material;
     }
     setMaterial(material){
@@ -342,7 +414,7 @@ class Mesh{
         this.indexBuffer = indexBuffer;
         this.normalBuffer = normalBuffer;
     }
-    createNewBuffers(vertices, indices){
+    createNewBuffers(vertices, indices, normals = null){
         this.vertexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
@@ -354,25 +426,21 @@ class Mesh{
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);  
         this.indexBuffer.itemSize = 1;
         this.indexBuffer.numItems = indices.length;
+
+        if(normals != null){
+            this.normalBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
+            this.normalBuffer.itemSize = 3;
+            this.normalBuffer.numItems = normals.length / 3;
+        }
     }
-    createNewBuffersWithNormals(vertices, indices, normals){
-        this.vertexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-        this.vertexBuffer.itemSize = 3;
-        this.vertexBuffer.numItems = vertices.length / 3;
-
-        this.indexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer); 
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);  
-        this.indexBuffer.itemSize = 1;
-        this.indexBuffer.numItems = indices.length;
-
-        this.normalBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
-        this.normalBuffer.itemSize = 3;
-        this.normalBuffer.numItems = normals.length / 3;
+    createUVBuffer(uvs){
+        this.uvBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.STATIC_DRAW);
+        this.uvBuffer.itemSize = 2;
+        this.uvBuffer.numItmes = uvs.length / 2;
     }
     getVertexBuffer(){
         return this.vertexBuffer;
@@ -382,6 +450,9 @@ class Mesh{
     }
     getNormalBuffer(){
         return this.normalBuffer;
+    }
+    getUVBuffer(){
+        return this.uvBuffer;
     }
     bindVertexBuffer(){
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
@@ -393,6 +464,12 @@ class Mesh{
     bindNormalBuffer(){
         gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
         gl.vertexAttribPointer(this.material.getShader().normalAttribute, 3, gl.FLOAT, false, 0, 0);
+    }
+    bindUVBuffer(){
+        gl.enableVertexAttribArray(this.material.getShader().texCoordAttribute);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
+        gl.vertexAttribPointer(this.material.getShader().texCoordAttribute, 2, gl.FLOAT, false, 0, 0);
     }
     draw(){
         gl.drawElements(gl.TRIANGLES, this.indexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
@@ -446,11 +523,13 @@ class Mesh{
 }
 
 class WorldObject{
-    constructor(mesh, transform, color, material = defaultMaterial){
+    constructor(mesh, transform, color, material = defaultMaterial, useTexture = false, texture = null){
         this.mesh = mesh;
         this.transform = transform;
         this.color = color;
         this.material = material;
+        this.useTex = useTexture;
+        this.texture = texture;
 
         if(this.mesh != null)
         {
@@ -476,6 +555,15 @@ class WorldObject{
     }
     getColor(){
         return this.color;
+    }
+    useTexture(){
+        return this.useTex;
+    }
+    getTexture(){
+        return this.texture;
+    }
+    setTexture(tex){
+        this.texture = tex;
     }
 }
 class Cube extends WorldObject{
@@ -542,8 +630,6 @@ class Camera{
 
         this.transform = transform;
         this.viewMatrix = mat4.create();
-        
-        this.workingMatrix = mat4.create();
     }
     getViewMatrix(){
         return mat4.inverse(this.getTransform().getWorldTransformationMatrix(), this.viewMatrix);

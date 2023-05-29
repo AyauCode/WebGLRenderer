@@ -4,7 +4,23 @@
 //Copyright 2023, Ayau(AyauCode), All rights reserved.
 ///////////////////////////////////////////////////////
 
+/**
+ * An array of length 3 arrays representing the unit vectors pointing along the positive and negative direction of the x,y and z axes
+ */
 const directions = [[0,1,0],[0,-1,0],[-1,0,0],[1,0,0],[0,0,1],[0,0,-1]];
+
+/**
+ * A 3x3 matrix to hold values used in temporary matrix operations
+ */
+var workingMat3 = mat3.create();
+/**
+ * A 4x4 matrix to hold values used in temporary matrix operations
+ */
+var workingMat4 = mat4.create();
+/**
+ * A length 3 vextor to hold values used in temporary vector operations
+ */
+var workingVec3 = vec3.create();
 
 /**
  * Returns the given degrees in radians
@@ -163,7 +179,7 @@ function generateCubeSphereFace(normal, resolution, radius){
     }
 
     var cubeSphereMesh = new Mesh();
-    cubeSphereMesh.createNewBuffersWithNormals(vertices, indices, normals);
+    cubeSphereMesh.createNewBuffers(vertices, indices, normals);
     return cubeSphereMesh;
 }
 /**
@@ -205,7 +221,7 @@ function generatePlaneMesh(size, resolution){
     }
 
     var planeMesh = new Mesh();
-    planeMesh.createNewBuffersWithNormals(vertices, indices, normals);
+    planeMesh.createNewBuffers(vertices, indices, normals);
     return planeMesh;
 }
 
@@ -344,7 +360,7 @@ function generateCylinderMesh(resolution, bottomRadius, topRadius){
     }
 
     var cylinderMesh = new Mesh();
-    cylinderMesh.createNewBuffersWithNormals(vertices, indices, normals);
+    cylinderMesh.createNewBuffers(vertices, indices, normals);
     //cylinderMesh.calculateNormals(vertices, indices);
     return cylinderMesh;
 }

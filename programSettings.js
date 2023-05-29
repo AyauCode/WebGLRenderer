@@ -5,7 +5,11 @@
 ///////////////////////////////////////////////////////
 
 //Settings controlled by UI
-var drawSolidBackground = false, drawGradientSky = true, drawLight = false, ambientLighting = true, diffuseLighting = true, specularLighting = true, freeCam = false, followObject = false, drawGroundPlane = true, drawTerrain = false, drawWater = false;
+var drawSolidBackground = false, drawGradientSky = false, drawSkyBox = true;
+var drawLight = false, ambientLighting = true, diffuseLighting = true, specularLighting = true;
+var freeCam = false, followObject = false;
+var drawGroundPlane = true, drawTerrain = false, drawWater = false;
+var rotateSceneGlobally = false;
 
 var backgroundColor = [0.0,0.0,0.0];
 
@@ -16,6 +20,7 @@ var diffuseLightStrength = 1.0;
 var specularLightStrength = 0.5;
 var specularLightFocus = 5;
 var flatShadingStrength = 1.0;
+var globalRotateSpeed = 2.5;
 
 var skyColor1 = [0.0,0.83529411764,1.0];
 var skyColor2 = [0.99607843137,0.93725490196,0.30196078431];
@@ -59,6 +64,10 @@ function setSkyColorOffset(val){
 function setBackgroundColor(hex){
     backgroundColor = hexToRGB(hex);
     gl.clearColor(backgroundColor[0], backgroundColor[1], backgroundColor[2], 1.0);
+}
+
+function setShouldDrawSkybox(boolValue){
+    drawSkyBox = boolValue;
 }
 
 function setShouldDrawLight(boolValue){
@@ -141,4 +150,11 @@ function setWaterColor(hex){
 }
 function getWaterColorAsHex(){
     return rgbToHex(waterObject.getColor());
+}
+
+function setShouldRotateSceneGlobally(boolValue){
+    rotateSceneGlobally = boolValue;
+}
+function setGlobalRotateSpeed(value){
+    globalRotateSpeed = value;
 }

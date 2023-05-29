@@ -95,6 +95,16 @@
         padding: 0;
         margin: 1px;
     }
+    a:link{
+        color: #23b9ff;
+        background-color: transparent;
+        text-decoration: underline;
+    }
+    a:visited{
+        color: #23b9ff;
+        background-color: transparent;
+        text-decoration: underline;
+    }
 </style>
 
 <!--  ************** PHONG Shader ************* --> 
@@ -110,10 +120,15 @@
     uniform float uSpecularFocus;
     uniform vec3 uLightColor;
 
+    uniform int useTexture;
+    uniform sampler2D uMainTex;
+
     varying vec3 worldVertex;
     varying vec3 normal;
     varying vec3 lightPos;
     varying vec3 camPos;
+
+    varying highp vec2 texCoord;
 
     void main(void) {
         vec3 norm = normalize(normal);
@@ -129,8 +144,16 @@
         float spec = pow(max(dot(reflectDir, viewDir), 0.0), pow(2.0,uSpecularFocus));
         vec3 specular = uSpecularStrength * spec * uLightColor;
 
-        vec3 result = (ambient + diffuse + specular) * uColor;
-        gl_FragColor = vec4(result, 1.0);
+        vec3 finalColor = uColor;
+        float alpha = 1.0;
+        if(useTexture == 1){
+            vec4 textureColor = texture2D(uMainTex, texCoord);
+            alpha = textureColor.w;
+            finalColor = vec3(textureColor) * uColor;
+        }
+
+        vec3 result = (ambient + diffuse + specular) * finalColor;
+        gl_FragColor = vec4(result, alpha);
     }
 </script>
 
@@ -140,6 +163,7 @@
 
     attribute vec3 aVertexPosition;
     attribute vec3 aNormal;
+    attribute vec2 aTexCoord;
 
     uniform vec3 uColor;
     uniform float uAmbientStrength;
@@ -161,6 +185,8 @@
     uniform mat4 uVMatrix;
     uniform mat4 uPMatrix;
 
+    varying highp vec2 texCoord;
+
     void main(void) {
         vec4 vertexPos = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
         gl_Position = vertexPos;
@@ -170,11 +196,13 @@
 
         lightPos = vec3(uLightModelMatrix * vec4(0.0,0.0,0.0,1.0));
         camPos = vec3(uCamModelMatrix * vec4(0.0,0.0,0.0,1.0));
+
+        texCoord = aTexCoord;
     }
 </script>
 
-<!--  ************** SKY Shaders ************* -->
-<!--  ************** SKY Fragment Shader ************* --> 
+<!--  ************** GRADIENT SKY Shaders ************* -->
+<!--  ************** GRADIENT SKY Fragment Shader ************* --> 
 <script id="sky-shader-fs" type="x-shader/x-fragment">
     #extension GL_OES_standard_derivatives : enable
     precision mediump float;
@@ -199,7 +227,7 @@
     }
 </script>
 
-<!--  ************** SKY Vertex Shader ************* -->
+<!--  ************** GRADIENT SKY Vertex Shader ************* --> 
 <script id="sky-shader-vs" type="x-shader/x-vertex">
     precision mediump float;
 
@@ -221,6 +249,52 @@
     }
 </script>
 
+<!--  ************** ENV MAPPING Shaders ************* -->
+<!--  ************** ENV MAPPING Fragment Shader ************* --> 
+<script id="env-map-shader-fs" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision mediump float;
+
+    uniform samplerCube uSkybox;
+    
+    varying vec3 worldVertex;
+    varying vec3 camPos;
+    varying vec3 normal;
+    
+    void main(void) {
+        vec3 viewDir = normalize(worldVertex - camPos);
+        vec3 R = normalize(reflect(-viewDir, normalize(normal)));
+
+        gl_FragColor = textureCube(uSkybox, R);
+    }
+</script>
+
+<!--  ************** ENV MAPPING Vertex Shader ************* -->
+<script id="env-map-shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
+
+    attribute vec3 aVertexPosition;
+    attribute vec3 aNormal;
+
+    uniform mat4 uMMatrix;
+    uniform mat4 uVMatrix;
+    uniform mat4 uPMatrix;
+    uniform mat4 uCamModelMatrix;
+    uniform mat3 uNormalMatrix;
+
+    varying vec3 worldVertex;
+    varying vec3 camPos;
+    varying vec3 normal;
+
+    void main(void) {
+        gl_Position = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
+
+        camPos = vec3(uCamModelMatrix * vec4(0.0,0.0,0.0,1.0));
+        normal = uNormalMatrix * aNormal;
+        worldVertex = vec3(uMMatrix*vec4(aVertexPosition, 1.0));
+    }
+</script>
+
 <!--  ************** UNLIT Shaders ************* -->
 <!--  ************** UNLIT Fragment Shader ************* --> 
 <script id="unlit-shader-fs" type="x-shader/x-fragment">
@@ -228,10 +302,20 @@
     precision mediump float;
 
     uniform vec3 uColor;
+    uniform int useTexture;
+    uniform sampler2D uMainTex;
+
+    varying highp vec2 texCoord;
     
     void main(void) {
-        
-        gl_FragColor = vec4(uColor, 1.0);
+        vec3 finalColor = uColor;
+        float alpha = 1.0;
+        if(useTexture == 1){
+            vec4 textureColor = texture2D(uMainTex, texCoord);
+            alpha = textureColor.w;
+            finalColor = vec3(textureColor) * uColor;
+        }
+        gl_FragColor = vec4(finalColor, alpha);
     }
 </script>
 
@@ -240,14 +324,18 @@
     precision mediump float;
 
     attribute vec3 aVertexPosition;
+    attribute vec2 aTexCoord;
     uniform vec3 uColor;
 
     uniform mat4 uMMatrix;
     uniform mat4 uVMatrix;
     uniform mat4 uPMatrix;
 
+    varying highp vec2 texCoord;
+
     void main(void) {
         gl_Position = uPMatrix*uVMatrix*uMMatrix*vec4(aVertexPosition, 1.0);
+        texCoord = aTexCoord;
     }
 </script>
 
@@ -324,6 +412,9 @@
         <div style="color: #FFFFFF" id = "fpsCounter">FPS: 0</div>
         <fieldset>
             <legend><b>Program Options:</b></legend>
+            <div>
+                <output id="controlsText"><b>Controls Listed in <a target="_blank" rel="noopener noreferrer" href="https://github.com/AyauCode/WebGLRenderer/blob/main/README.md">README</a></b></output>
+            </div>
             <!--  ************* OPTION TABS *************** -->
             <div class="tab">
                 <button class="tablinks active" onclick="openTab(event, 'All')">All</button>
@@ -349,7 +440,7 @@
 
                 <!--  ************** GRADIENT SKY ************* -->
                 <div>
-                    <input type="checkbox" id="drawGradientSky" name="drawGradientSky" checked autocomplete="off">
+                    <input type="checkbox" id="drawGradientSky" name="drawGradientSky" autocomplete="off">
                     <label for="drawGradientSky">Gradient Sky</label>
                 </div>
                 <div class="colorcontainer">
@@ -364,6 +455,13 @@
                     <output id="skyColorOffsetText">&emsp;&emsp;Offset:</output>
                     <label for="skyColorOffsetSlider" id="skyColorOffsetValueLabel">0.65</label>
                     <input type="range" class="slider" id="skyColorOffsetSlider" step="0.01" min="0" max="1" value="0.65" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
+
+                <!--  ************** SKY BOX ************* -->
+                <div>
+                    <input type="checkbox" id="drawSkybox" name="drawSkybox" checked autocomplete="off">
+                    <label for="drawSkybox">Draw Skybox</label>
                 </div>
                 <!--  ***************************************** -->
 
@@ -430,7 +528,7 @@
 
                 <div>
                     <input type="checkbox" id="followObject" name="followObject" autocomplete="off">
-                    <label for="followObject">Follow Object</label>
+                    <label for="followObject">Follow Hierarchical Object</label>
                 </div>
                 <!--  ***************************************** -->
             </div>
@@ -438,6 +536,17 @@
             <!--  ***************************************** -->
 
             <div id = "Scene" class="tabcontent">
+                <!--  ************* ROTATE SCENE ************** -->
+                <div>
+                    <input type="checkbox" id="rotateSceneGlobally" name="rotateSceneGlobally" autocomplete="off">
+                    <label for="rotateSceneGlobally">Rotate Scene Globally<br><b>&emsp;&emsp;(Around [0,0,0] about Y-Axis)</b><br></label>
+                </div>
+                <div class="slidecontainer">
+                    <output id="globalRotateSpeedText">&emsp;&emsp;Speed:</output>
+                    <label for="globalRotateSpeedSlider" id="globalRotateSpeedValueLabel">2.50</label>
+                    <input type="range" class="slider" id="globalRotateSpeedSlider" step="0.01" min="-5.0" max="5.0" value="2.5" autocomplete="off">
+                </div>
+                <!--  ***************************************** -->
                 <!--  ************* GROUND PLANE ************** -->
                 <div>
                     <input type="checkbox" id="drawGroundPlane" name="drawGroundPlane" checked autocomplete="off">
@@ -523,10 +632,15 @@
 
         //======================BACKGROUND=COLOR==========================
         document.getElementById("drawSolidBackground").oninput = function() {
-            document.getElementById("drawGradientSky").checked = !document.getElementById("drawGradientSky").checked;
+            document.getElementById("drawGradientSky").checked = false;
+            document.getElementById("drawSkybox").checked = false;
+            if(!document.getElementById("drawSolidBackground").checked){
+                document.getElementById("drawSolidBackground").checked = true;
+            }
 
-            setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
             setShouldDrawGradientSky(document.getElementById("drawGradientSky").checked);
+            setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
+            setShouldDrawSkybox(document.getElementById("drawSkybox").checked);
 
             document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
         };
@@ -539,10 +653,15 @@
 
         //========================GRADIENT=SKY============================
         document.getElementById("drawGradientSky").oninput = function() {
-            document.getElementById("drawSolidBackground").checked = !document.getElementById("drawSolidBackground").checked;
+            document.getElementById("drawSolidBackground").checked = false;
+            document.getElementById("drawSkybox").checked = false;
+            if(!document.getElementById("drawGradientSky").checked){
+                document.getElementById("drawSolidBackground").checked = true;
+            }
             
             setShouldDrawGradientSky(document.getElementById("drawGradientSky").checked);
             setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
+            setShouldDrawSkybox(document.getElementById("drawSkybox").checked);
 
             document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
         };
@@ -564,6 +683,21 @@
             document.getElementById("fpsCounter").style.color = getInvertedBackgroundColorAsHex();
         };
         //================================================================
+
+        //===========================SKY=BOX==============================
+        document.getElementById("drawSkybox").oninput = function() {
+            document.getElementById("drawSolidBackground").checked = false;
+            document.getElementById("drawGradientSky").checked = false;
+            if(!document.getElementById("drawSkybox").checked){
+                document.getElementById("drawSolidBackground").checked = true;
+            }
+            
+            setShouldDrawGradientSky(document.getElementById("drawGradientSky").checked);
+            setShouldDrawSolidBackground(document.getElementById("drawSolidBackground").checked);
+            setShouldDrawSkybox(document.getElementById("drawSkybox").checked);
+        };
+        //================================================================
+
 
         //=======================LIGHT=GIZMO==============================
         document.getElementById("drawLight").oninput = function() {
@@ -629,6 +763,20 @@
 
             setFollowObjectActive(document.getElementById("followObject").checked);
         };
+        //================================================================
+
+        //========================ROTATE=SCENE=============================
+        document.getElementById("rotateSceneGlobally").oninput = function() {
+            setShouldRotateSceneGlobally(document.getElementById("rotateSceneGlobally").checked);
+            var roundedVal = parseFloat(document.getElementById("globalRotateSpeedSlider").value).toFixed(2);
+            setGlobalRotateSpeed(roundedVal);
+        };
+        document.getElementById("globalRotateSpeedSlider").oninput = function() {
+            var roundedVal = parseFloat(document.getElementById("globalRotateSpeedSlider").value).toFixed(2);
+            document.getElementById("globalRotateSpeedValueLabel").innerHTML = roundedVal;
+            setGlobalRotateSpeed(roundedVal);
+        };
+
         //================================================================
 
         //=======================GROUND=PLANE=============================
